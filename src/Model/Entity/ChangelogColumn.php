@@ -32,4 +32,5 @@ class ChangelogColumn extends Entity
         '*' => true,
         'id' => false
     ];
+
 }

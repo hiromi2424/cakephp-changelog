@@ -110,9 +110,28 @@ class ChangelogBehaviorTest extends TestCase
                 'model' => 'Articles',
                 'foreign_key' => 1
             ])
-            ->contain('ChangelogColumns')
             ->first();
         $this->assertNotEmpty($changelog);
         $this->assertSame(false, $changelog->is_new);
+
+        $titleChange = $this->ChangelogColumns->find()
+            ->where([
+                'ChangelogColumns.changelog_id' => $changelog->id,
+                'ChangelogColumns.column' => 'title',
+            ])
+            ->first();
+        $this->assertNotEmpty($titleChange);
+        $this->assertSame('First Article', $titleChange->before);
+        $this->assertSame('Changed title', $titleChange->after);
+
+        $bodyChange = $this->ChangelogColumns->find()
+            ->where([
+                'ChangelogColumns.changelog_id' => $changelog->id,
+                'ChangelogColumns.column' => 'body',
+            ])
+            ->first();
+        $this->assertNotEmpty($bodyChange);
+        $this->assertSame('First Article', $bodyChange->before);
+        $this->assertSame('Changed body', $bodyChange->after);
     }
 }

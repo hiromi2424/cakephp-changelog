@@ -29,9 +29,8 @@ class ChangelogBehavior extends Behavior
      * @var array
      */
     protected $_defaultConfig = [
-        'atomic' => false,
         'changelogTable' => 'Changelog.Changelogs',
-        'columnTable' => 'Changelog.ChangelogCoumns',
+        'columnTable' => 'Changelog.ChangelogColumns',
         'ignoreColumns' => [
             'id',
             'created',
@@ -94,8 +93,9 @@ class ChangelogBehavior extends Behavior
         $columns = array_filter($columns, function ($column) {
             return !in_array($column, $this->config('ignoreColumns'));
         });
-        $beforeValues = $entity->extract($columns, $isDirty = true);
-        $afterValues = $entity->extractOriginalChanged($columns);
+        $beforeValues = $entity->extractOriginalChanged($columns);
+        $afterValues = $entity->extract($columns, $isDirty = true);
+
         /**
          * Check whether change was done or not
          */
@@ -121,10 +121,28 @@ class ChangelogBehavior extends Behavior
             'is_new' => $entity->isNew()
         ]);
 
+        $changelog = $Changelogs->save($changelog, [
+            'atomic' => false
+        ]);
         // check save results
-        if (!$Changelogs->save($changelog, [
-            'atomic' => $this->config('atomic')
-        ])) {
+        if (!$changelog) {
+            return false;
+        }
+
+        /**
+         * save childlen
+         */
+        $results = array_map(function ($column) use ($changelog, $beforeValues, $afterValues, $Columns) {
+            $column = $Columns->newEntity([
+                'changelog_id' => $changelog->id,
+                'column' => $column,
+                'before' => $beforeValues[$column],
+                'after' => $afterValues[$column],
+            ]);
+            return $Columns->save($column, ['atomic' => false]);
+        }, array_keys($beforeValues));
+
+        if (in_array(false, $results)) {
             return false;
         }
 

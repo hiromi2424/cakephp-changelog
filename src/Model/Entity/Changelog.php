@@ -31,4 +31,5 @@ class Changelog extends Entity
         '*' => true,
         'id' => false
     ];
+
 }

@@ -73,4 +73,5 @@ class ChangelogsTable extends Table
 
         return $validator;
     }
+
 }
