@@ -178,9 +178,8 @@ class ChangelogBehavior extends Behavior
         return $this->tableLocator()->get($this->config('columnTable'));
     }
 
-    public function filterChanges($before, $after, $column, $columnDef)
+    public static function filterChanges($before, $after, $column, $columnDef)
     {
-        debug($columnDef);
         // filter null != ''
         return $before != $after;
     }
