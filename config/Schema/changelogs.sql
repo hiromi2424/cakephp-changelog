@@ -26,6 +26,7 @@ CREATE TABLE `changelogs` (
   `id` int(11) unsigned NOT NULL AUTO_INCREMENT,
   `model` char(30) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
   `foreign_key` char(36) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT '',
+  `is_new` tinyint(1) NOT NULL DEFAULT '0',
   `created` datetime NOT NULL,
   `modified` datetime DEFAULT NULL,
   PRIMARY KEY (`id`),,

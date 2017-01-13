@@ -2,15 +2,13 @@
 namespace Changelog\Test\TestCase\Model\Behavior;
 
 use Cake\Core\Configure;
+use Cake\Datasource\ConnectionManager;
 use Cake\ORM\Table;
+use Cake\ORM\TableRegistry;
 use Cake\TestSuite\TestCase;
 use Exception;
 
 use Changelog\Model\Behavior\ChangelogBehavior;
-
-class TestException extends Exception
-{
-}
 
 class ArticlesTable extends Table
 {
@@ -25,11 +23,32 @@ class ChangelogBehaviorTest extends TestCase
 {
 
     /**
+     * Test connection
+     *
+     * @var \Cake\Datasource\ConnectionInterface
+     */
+    public $connection;
+
+    /**
      * Article test model
      *
      * @var ArticlesTable
      */
     public $Articles;
+
+    /**
+     * Changelog test model
+     *
+     * @var ChangelogsTable
+     */
+    public $Changelogs;
+
+    /**
+     * ChangelogColumn test model
+     *
+     * @var ChangelogColumnsTable
+     */
+    public $ChangelogColumns;
 
     /**
      * Load relevant fixtures
@@ -40,7 +59,6 @@ class ChangelogBehaviorTest extends TestCase
         'plugin.changelog.articles',
         'plugin.changelog.changelogs',
         'plugin.changelog.changelog_columns',
-        //'core.users'
     ];
 
     /**
@@ -50,11 +68,16 @@ class ChangelogBehaviorTest extends TestCase
      */
     public function setUp()
     {
+        parent::setUp();
+        $this->connection = ConnectionManager::get('test');
+
         $this->Articles = new ArticlesTable([
             'alias' => 'Articles',
             'table' => 'articles',
+            'connection' => $this->connection
         ]);
-        parent::setUp();
+        $this->Changelogs = TableRegistry::get('Changelog.Changelogs');
+        $this->ChangelogColumns = TableRegistry::get('Changelog.ChangelogColumns');
     }
     /**
      * tearDown method
@@ -63,16 +86,33 @@ class ChangelogBehaviorTest extends TestCase
      */
     public function tearDown()
     {
+        unset($this->connection, $this->Articles);
         parent::tearDown();
-        unset($this->Articles);
     }
 
     /**
-     * Test initialize method
+     * Test saveChangelog() method
      *
      * @test
      */
-    public function initialize()
+    public function saveChangelog()
     {
+        $article = $this->Articles->get(1);
+        $article = $this->Articles->patchEntity($article, [
+            'title' => 'Changed title',
+            'body' => 'Changed body'
+        ]);
+        $result = $this->Articles->saveChangelog($article);
+        $this->assertNotEmpty($result);
+
+        $changelog = $this->Changelogs->find()
+            ->where([
+                'model' => 'Articles',
+                'foreign_key' => 1
+            ])
+            ->contain('ChangelogColumns')
+            ->first();
+        $this->assertNotEmpty($changelog);
+        $this->assertSame(false, $changelog->is_new);
     }
 }
