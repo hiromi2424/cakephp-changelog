@@ -31,6 +31,7 @@ class ChangelogBehavior extends Behavior
     protected $_defaultConfig = [
         'changelogTable' => 'Changelog.Changelogs',
         'columnTable' => 'Changelog.ChangelogColumns',
+        'filter' => ['\Changelog\Model\Behavior\ChangelogBehavior', 'filterChanges'],
         'ignoreColumns' => [
             'id',
             'created',
@@ -133,11 +134,19 @@ class ChangelogBehavior extends Behavior
          * save childlen
          */
         $results = array_map(function ($column) use ($changelog, $beforeValues, $afterValues, $Columns) {
+            $before = $beforeValues[$column];
+            $after = $afterValues[$column];
+            // filters changes
+            $columnDef = $this->_table->schema()->column($column);
+            $filter = $this->config('filter');
+            if (!$filter($before, $after, $column, $columnDef)) {
+                return true;
+            }
             $column = $Columns->newEntity([
                 'changelog_id' => $changelog->id,
                 'column' => $column,
-                'before' => $beforeValues[$column],
-                'after' => $afterValues[$column],
+                'before' => $before,
+                'after' => $after,
             ]);
             return $Columns->save($column, ['atomic' => false]);
         }, array_keys($beforeValues));
@@ -167,6 +176,13 @@ class ChangelogBehavior extends Behavior
     public function getColumnTable()
     {
         return $this->tableLocator()->get($this->config('columnTable'));
+    }
+
+    public function filterChanges($before, $after, $column, $columnDef)
+    {
+        debug($columnDef);
+        // filter null != ''
+        return $before != $after;
     }
 
 }

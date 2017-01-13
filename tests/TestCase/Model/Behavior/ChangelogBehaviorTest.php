@@ -97,6 +97,7 @@ class ChangelogBehaviorTest extends TestCase
      */
     public function saveChangelog()
     {
+        // update article's title and body
         $article = $this->Articles->get(1);
         $article = $this->Articles->patchEntity($article, [
             'title' => 'Changed title',
@@ -105,6 +106,7 @@ class ChangelogBehaviorTest extends TestCase
         $result = $this->Articles->saveChangelog($article);
         $this->assertNotEmpty($result);
 
+        // find parent table changelogs record
         $changelog = $this->Changelogs->find()
             ->where([
                 'model' => 'Articles',
@@ -114,6 +116,7 @@ class ChangelogBehaviorTest extends TestCase
         $this->assertNotEmpty($changelog);
         $this->assertSame(false, $changelog->is_new);
 
+        // asserts title column(VARCHAR)
         $titleChange = $this->ChangelogColumns->find()
             ->where([
                 'ChangelogColumns.changelog_id' => $changelog->id,
@@ -124,6 +127,7 @@ class ChangelogBehaviorTest extends TestCase
         $this->assertSame('First Article', $titleChange->before);
         $this->assertSame('Changed title', $titleChange->after);
 
+        // asserts body column(TEXT)
         $bodyChange = $this->ChangelogColumns->find()
             ->where([
                 'ChangelogColumns.changelog_id' => $changelog->id,
@@ -133,5 +137,41 @@ class ChangelogBehaviorTest extends TestCase
         $this->assertNotEmpty($bodyChange);
         $this->assertSame('First Article', $bodyChange->before);
         $this->assertSame('Changed body', $bodyChange->after);
+
+        // Belows are test for NULL => '' is not change for text column.
+        // This scenario is happen when body input was not placed at your
+        // form on add action and was placed on edit action.
+        // So before value was NULL and after value was '' so that entity
+        // handles these as different values.
+
+        // articles->id = 2 holds body column as null value
+        $article = $this->Articles->get(2);
+        // Set empty string to body
+        $article = $this->Articles->patchEntity($article, [
+            'title' => 'Changed title',
+            'body' => ''
+        ]);
+        $result = $this->Articles->saveChangelog($article);
+        $this->assertNotEmpty($result);
+
+        // find parent table changelogs record
+        $changelog = $this->Changelogs->find()
+            ->where([
+                'model' => 'Articles',
+                'foreign_key' => 2
+            ])
+            ->first();
+        $this->assertNotEmpty($changelog);
+
+        // find record for body column
+        $bodyChange = $this->ChangelogColumns->find()
+            ->where([
+                'ChangelogColumns.changelog_id' => $changelog->id,
+                'ChangelogColumns.column' => 'body',
+            ])
+            ->first();
+        // Expects NO change found
+        $this->assertEmpty($bodyChange);
     }
+
 }
