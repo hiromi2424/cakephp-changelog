@@ -25,12 +25,12 @@
     },
     "autoload": {
         "psr-4": {
-            "SlackLogEngine\\": "src"
+            "Changelog\\": "src"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "SlackLogEngine\\Test\\": "tests",
+            "Changelog\\Test\\": "tests",
             "Cake\\Test\\Fixture\\": "./vendor/cakephp/cakephp/tests/Fixture"
         }
     },
