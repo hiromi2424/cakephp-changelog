@@ -12,6 +12,7 @@ This is CakePHP plugin to provide saving changelogs for database records.
 
 ```
 composer require hiromi2424/cakephp-changelog
+bin/cake plugin load Changelog # OR manually add `Plugin::load('Changelog');`
 ```
 
 ## Requirements
@@ -21,11 +22,16 @@ composer require hiromi2424/cakephp-changelog
 
 ## Usage
 
+### Setup database tables
+
+There is `config/Schema/changelogs.sql` for general purpose.
+If you need to use another column or to change size of columns, change table schemas as you need.
+
 ### Configuration
 
-This provides `Changelog` Behavior.
+You also should setup each table to use `Changelog` Behavior.
 
-    `$this->loadBehavior('Changelog', [
+    `$this->loadBehavior('Changelog.Changelog', [
         // ... your options
     ])`
 

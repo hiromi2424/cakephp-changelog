@@ -1,7 +1,8 @@
 <?php
-namespace SlackLogEngine\Test\TestCase\Model\Behavior;
+namespace Changelog\Test\TestCase\Model\Behavior;
 
 use Cake\Core\Configure;
+use Cake\ORM\Table;
 use Cake\TestSuite\TestCase;
 use Exception;
 
@@ -11,15 +12,36 @@ class TestException extends Exception
 {
 }
 
+class ArticlesTable extends Table
+{
+    public function initialize(array $config)
+    {
+        parent::initialize($config);
+        $this->addBehavior('Changelog.Changelog');
+    }
+}
+
 class ChangelogBehaviorTest extends TestCase
 {
 
     /**
-     * Test subject
+     * Article test model
      *
-     * @var \Changelog\Model\Behavior\ChangelogBehavior
+     * @var ArticlesTable
      */
-    public $Bahavior;
+    public $Articles;
+
+    /**
+     * Load relevant fixtures
+     *
+     * @var array
+     */
+    public $fixtures = [
+        'plugin.changelog.articles',
+        'plugin.changelog.changelogs',
+        'plugin.changelog.changelog_columns',
+        //'core.users'
+    ];
 
     /**
      * setUp method
@@ -28,6 +50,10 @@ class ChangelogBehaviorTest extends TestCase
      */
     public function setUp()
     {
+        $this->Articles = new ArticlesTable([
+            'alias' => 'Articles',
+            'table' => 'articles',
+        ]);
         parent::setUp();
     }
     /**
@@ -38,10 +64,11 @@ class ChangelogBehaviorTest extends TestCase
     public function tearDown()
     {
         parent::tearDown();
+        unset($this->Articles);
     }
 
     /**
-     * Test initiakize method
+     * Test initialize method
      *
      * @test
      */
