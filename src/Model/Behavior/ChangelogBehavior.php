@@ -31,7 +31,7 @@ class ChangelogBehavior extends Behavior
     protected $_defaultConfig = [
         'changelogTable' => 'Changelog.Changelogs',
         'columnTable' => 'Changelog.ChangelogColumns',
-        'filter' => ['\Changelog\Model\Behavior\ChangelogBehavior', 'filterChanges'],
+        'filter' => 'filterChanges',
         'ignoreColumns' => [
             'id',
             'created',
@@ -58,7 +58,6 @@ class ChangelogBehavior extends Behavior
         }
     }
 
-
     /**
      * afterSave callback.
      * This logs entities when `onAfterSave` option was turned on.
@@ -84,32 +83,64 @@ class ChangelogBehavior extends Behavior
         $Columns = $this->getColumnTable();
 
         /**
-         * Check if entity is new and whether log new or not.
+         * Be sure whether log new entity or not.
          */
         if (!$this->config('logIsNew') && $entity->isNew()) {
             return false;
         }
 
         $columns = $this->_table->schema()->columns();
-        $columns = array_filter($columns, function ($column) {
-            return !in_array($column, $this->config('ignoreColumns'));
-        });
+
+        /**
+         * Filters ignored columns
+         */
+        $columns = array_diff($columns, $this->config('ignoreColumns'));
         $beforeValues = $entity->extractOriginalChanged($columns);
         $afterValues = $entity->extract($columns, $isDirty = true);
 
         /**
-         * Check whether change was done or not
+         * Exception, before counts should equal to after counts
          */
-        if (!$this->config('logEmptyChanges')) {
-            if (empty($beforeValues) || empty($afterValues)) {
-                return false;
+        if (count($beforeValues) !== count($afterValues)) {
+            return false;
+        }
+
+        /**
+         * Filters changes
+         */
+        $changes = [];
+        foreach (array_keys($beforeValues) as $column) {
+            /**
+             * Dispatches filter event
+             */
+            $before = $beforeValues[$column];
+            $after = $afterValues[$column];
+            $columnDef = $this->_table->schema()->column($column);
+            $table = $this->_table;
+            $event = $this->_table->behaviors()->dispatchEvent('Changelog.filterChanges', compact([
+                'entity',
+                'before',
+                'after',
+                'column',
+                'columnDef',
+                'table',
+                'Columns'
+            ]));
+            // TODO: fix changelogID
+            if ($event->result) {
+                $changes[] = $Columns->newEntity([
+                    'changelog_id' => $changelog->id,
+                    'column' => $column,
+                    'before' => $before,
+                    'after' => $after,
+                ]);
             }
         }
 
         /**
-         * Before counts should equal to after counts
+         * Be sure  whether change was done or not
          */
-        if (count($beforeValues) !== count($afterValues)) {
+        if (!$this->config('logEmptyChanges') && empty($changes)) {
             return false;
         }
 
@@ -178,10 +209,57 @@ class ChangelogBehavior extends Behavior
         return $this->tableLocator()->get($this->config('columnTable'));
     }
 
-    public static function filterChanges($before, $after, $column, $columnDef)
+    /**
+     * Define additional events for filter
+     *
+     * {@inheritdoc}
+     */
+    public function implementedEvents()
     {
+        return parent::implementedEvents() + [
+            'Changelog.filterChanges' => [
+                'callable' => $this->config('filter')
+            ]
+        ];
+    }
+
+    /**
+     * Default filter
+     *
+     * @return bool column is changed or not
+     */
+    public function filterChanges(Event $event)
+    {
+        /**
+         * @var \Cake\ORM\Entity $entity
+         * @var mixed $before
+         * @var mixed $after
+         * @var string $column
+         * @var array $columnDef
+         * @var \Cake\ORM\Table $table
+         * @var \Cake\ORM\Table $Columns
+         */
+        extract($event->data());
+
+        /**
+         * Date inputs sometime represents string value in
+         * entity. This converts value for comparison.
+         */
+        if (!empty($after)) {
+            switch ($columnDef['type']) {
+                case 'date':
+                case 'datetime':
+                case 'time':
+                    $baseType = $table->baseColumnType($column);
+                    if ($baseType && Type::map($baseType)) {
+                        $after = Type::build($baseType)->toPHP($after);
+                    }
+                    break;
+            }
+        }
+
         // filter null != ''
-        return $before != $after;
+        return $data['before'] != ['after'];
     }
 
 }
