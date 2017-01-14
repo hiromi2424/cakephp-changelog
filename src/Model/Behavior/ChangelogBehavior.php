@@ -3,6 +3,7 @@
 namespace Changelog\Model\Behavior;
 
 use ArrayObject;
+use Cake\Database\Type;
 use Cake\Datasource\EntityInterface;
 use Cake\Event\Event;
 use Cake\ORM\Behavior;
@@ -246,10 +247,11 @@ class ChangelogBehavior extends Behavior
             case 'date':
             case 'datetime':
             case 'time':
-                $baseType = $table->baseColumnType($column);
+                $baseType = $table->schema()->baseColumnType($column);
                 if ($baseType && Type::map($baseType)) {
-                    $before = Type::build($baseType)->toPHP($before);
-                    $after = Type::build($baseType)->toPHP($after);
+                    $driver = $table->connection()->driver();
+                    $before = Type::build($baseType)->toPHP($before, $driver);
+                    $after = Type::build($baseType)->toPHP($after, $driver);
                 }
                 break;
         }
