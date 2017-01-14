@@ -7,6 +7,7 @@ use Cake\Datasource\EntityInterface;
 use Cake\Event\Event;
 use Cake\ORM\Behavior;
 use Cake\ORM\Locator\LocatorAwareTrait;
+use Cake\ORM\Table;
 use Cake\Utility\Hash;
 use Exception;
 use UnexpectedValueException;
@@ -32,8 +33,8 @@ class ChangelogBehavior extends Behavior
     protected $_defaultConfig = [
         'changelogTable' => 'Changelog.Changelogs',
         'columnTable' => 'Changelog.ChangelogColumns',
-        'convertValues' => 'convertColumnValues',
-        'filter' => 'filterChanges',
+        'convertValues' => 'convertChangelogValues',
+        'filterChanges' => 'filterChanges',
         'ignoreColumns' => [
             'id',
             'created',
@@ -162,7 +163,7 @@ class ChangelogBehavior extends Behavior
         }
 
         /**
-         * Be sure  whether change was done or not
+         * Be sure whether change was done or not
          */
         if (!$this->config('logEmptyChanges') && empty($changes)) {
             return false;
@@ -181,7 +182,7 @@ class ChangelogBehavior extends Behavior
             'associated' => 'ChangelogColumns',
             'atomic' => false
         ]);
-        return $table->dispatchEvent('Changelog.saveChangelog', compact('data', 'options'));
+        return $table->dispatchEvent('Changelog.saveChangelogRecords', compact('Changelogs', 'data', 'options'))->result;
     }
 
     /**
@@ -213,7 +214,7 @@ class ChangelogBehavior extends Behavior
     {
         return parent::implementedEvents() + [
             'Changelog.convertValues' => $this->config('convertValues'),
-            'Changelog.filterChanges' => $this->config('filter'),
+            'Changelog.filterChanges' => $this->config('filterChanges'),
             'Changelog.saveChangelogRecords' => $this->config('saveChangelogRecords')
         ];
     }
@@ -221,9 +222,10 @@ class ChangelogBehavior extends Behavior
     /**
      * Default convert process
      *
+     * @param \Cake\Event\Event $event The event for callback
      * @return array couple of $before, $after
      */
-    public function convertValues(Event $event)
+    public function convertChangelogValues(Event $event)
     {
         /**
          * @var \Cake\ORM\Entity $entity
@@ -258,6 +260,7 @@ class ChangelogBehavior extends Behavior
     /**
      * Default filter
      *
+     * @param \Cake\Event\Event $event The event for callback
      * @return bool column is changed or not
      */
     public function filterChanges(Event $event)
@@ -282,15 +285,19 @@ class ChangelogBehavior extends Behavior
     /**
      * Default save process
      *
+     * @param \Cake\Event\Event $event The event for callback
+     * @param \Cake\ORM\Table $Changelogs The table for parent
+     * @param ArrayObject $data save data
+     * @param ArrayObject $options save options
      * @return bool column is changed or not
      */
-    public function saveChangelogRecords(Event $event, array $data, array $options)
+    public function saveChangelogRecords(Event $event, Table $Changelogs, ArrayObject $data, ArrayObject $options)
     {
         /**
          * create saveRecord
          */
-        $changelog = $Changelogs->newEntity($data);
-        return $Changelogs->save($changelog, $options);
+        $changelog = $Changelogs->newEntity((array)$data);
+        return $Changelogs->save($changelog, (array)$options);
     }
 
 }
