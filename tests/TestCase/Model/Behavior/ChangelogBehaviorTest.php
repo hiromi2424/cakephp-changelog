@@ -137,13 +137,20 @@ class ChangelogBehaviorTest extends TestCase
         $this->assertNotEmpty($bodyChange);
         $this->assertSame('First Article', $bodyChange->before);
         $this->assertSame('Changed body', $bodyChange->after);
+    }
 
-        // Belows are test for NULL => '' is not change for text column.
-        // This scenario is happen when body input was not placed at your
-        // form on add action and was placed on edit action.
-        // So before value was NULL and after value was '' so that entity
-        // handles these as different values.
-
+    /**
+     * Test saveChangelog() method
+     * Belows are test for NULL => '' is not change for text column.
+     * This scenario is happen when body input was not placed at your
+     * form on add action and was placed on edit action.
+     * So before value was NULL and after value was '' so that entity
+     * handles these as different values.
+     *
+     * @test
+     */
+    public function saveChangelogNullAndEmptyString()
+    {
         // articles->id = 2 holds body column as null value
         $article = $this->Articles->get(2);
         // Set empty string to body
@@ -172,6 +179,30 @@ class ChangelogBehaviorTest extends TestCase
             ->first();
         // Expects NO change found
         $this->assertEmpty($bodyChange);
+    }
+
+    /**
+     * Test saveChangelog() method
+     * Belows are test for NULL => '' is not change for text column.
+     * This scenario is happen when body input was not placed at your
+     * form on add action and was placed on edit action.
+     * So before value was NULL and after value was '' so that entity
+     * handles these as different values.
+     *
+     * @test
+     */
+    public function saveChangelogDateField()
+    {
+        // articles->id = 3 holds date column filled
+        $article = $this->Articles->get(3);
+        // Set only date string expecting input from a form
+        // Database record holds '2017/01/14 00:00:00' as value
+        // and no change found is right result
+        $article = $this->Articles->patchEntity($article, [
+            'publish_at' => '2017/01/14 00:00'
+        ]);
+        $result = $this->Articles->saveChangelog($article);
+        $this->assertEmpty($result);
     }
 
 }

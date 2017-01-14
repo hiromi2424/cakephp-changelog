@@ -3,12 +3,15 @@
 namespace Changelog\Model\Behavior;
 
 use ArrayObject;
+use Cake\Database\Type;
 use Cake\Datasource\EntityInterface;
 use Cake\Event\Event;
 use Cake\ORM\Behavior;
 use Cake\ORM\Locator\LocatorAwareTrait;
+use Cake\ORM\Table;
 use Cake\Utility\Hash;
 use Exception;
+use UnexpectedValueException;
 
 /**
  * TODO: impl
@@ -31,7 +34,8 @@ class ChangelogBehavior extends Behavior
     protected $_defaultConfig = [
         'changelogTable' => 'Changelog.Changelogs',
         'columnTable' => 'Changelog.ChangelogColumns',
-        'filter' => ['\Changelog\Model\Behavior\ChangelogBehavior', 'filterChanges'],
+        'convertValues' => 'convertChangelogValues',
+        'filterChanges' => 'filterChanges',
         'ignoreColumns' => [
             'id',
             'created',
@@ -40,9 +44,8 @@ class ChangelogBehavior extends Behavior
         'locator' => null,
         'logIsNew' => false,
         'logEmptyChanges' => false,
-        'serializer' => 'serialize',
-        'unserializer' => 'unserialize',
-        'onAfterSave' => true
+        'onAfterSave' => true,
+        'saveChangelogRecords' => 'saveChangelogRecords'
     ];
 
     /**
@@ -57,7 +60,6 @@ class ChangelogBehavior extends Behavior
             $this->tableLocator($tableLocator);
         }
     }
-
 
     /**
      * afterSave callback.
@@ -82,80 +84,106 @@ class ChangelogBehavior extends Behavior
     {
         $Changelogs = $this->getChangelogTable();
         $Columns = $this->getColumnTable();
+        $table = $this->_table;
 
         /**
-         * Check if entity is new and whether log new or not.
+         * Be sure whether log new entity or not.
          */
         if (!$this->config('logIsNew') && $entity->isNew()) {
             return false;
         }
 
-        $columns = $this->_table->schema()->columns();
-        $columns = array_filter($columns, function ($column) {
-            return !in_array($column, $this->config('ignoreColumns'));
-        });
+        $columns = $table->schema()->columns();
+
+        /**
+         * Filters ignored columns
+         */
+        $columns = array_diff($columns, $this->config('ignoreColumns'));
         $beforeValues = $entity->extractOriginalChanged($columns);
         $afterValues = $entity->extract($columns, $isDirty = true);
 
         /**
-         * Check whether change was done or not
-         */
-        if (!$this->config('logEmptyChanges')) {
-            if (empty($beforeValues) || empty($afterValues)) {
-                return false;
-            }
-        }
-
-        /**
-         * Before counts should equal to after counts
+         * Exception, before counts should equal to after counts
          */
         if (count($beforeValues) !== count($afterValues)) {
             return false;
         }
 
         /**
-         * create saveRecord
+         * Filters changes
          */
-        $changelog = $Changelogs->newEntity([
-            'model' => $this->_table->alias(),
-            'foreign_key' => $entity->get($this->_table->primaryKey()),
-            'is_new' => $entity->isNew()
-        ]);
+        $changes = [];
+        foreach (array_keys($beforeValues) as $column) {
+            /**
+             * Prepare values for events
+             */
+            $before = $beforeValues[$column];
+            $after = $afterValues[$column];
+            $columnDef = $table->schema()->column($column);
+            $eventData = compact([
+                'entity',
+                'before',
+                'after',
+                'column',
+                'columnDef',
+                'table',
+                'Columns'
+            ]);
 
-        $changelog = $Changelogs->save($changelog, [
-            'atomic' => false
-        ]);
-        // check save results
-        if (!$changelog) {
+            /**
+             * Dispatches convert event
+             */
+            $event = $table->dispatchEvent('Changelog.convertValues', $eventData);
+            if (!$event->result) {
+                continue;
+            }
+
+            /**
+             * Expected 2 count array for event result 
+             */
+            if (!is_array($event->result) || count($event->result) !== 2) {
+                throw new UnexpectedValueException(sprintf(__d('changelog', 'The result for `Changelog.convertValue` event should be array with count 2, before, after. actually: %s')), var_export($event->result, true));
+            }
+            list($before, $after) = $event->result;
+            $eventData = compact('before', 'after') + $eventData;
+
+            /**
+             * Dispatches filter event
+             */
+            $event = $table->dispatchEvent('Changelog.filterChanges', $eventData);
+            /**
+             * Determine changes from result
+             */
+            if ($event->result) {
+                $changes[] = [
+                    'column' => $column,
+                    'before' => $before,
+                    'after' => $after,
+                ];
+            }
+        }
+
+        /**
+         * Be sure whether change was done or not
+         */
+        if (!$this->config('logEmptyChanges') && empty($changes)) {
             return false;
         }
 
         /**
-         * save childlen
+         * Saves actually
          */
-        $results = array_map(function ($column) use ($changelog, $beforeValues, $afterValues, $Columns) {
-            $before = $beforeValues[$column];
-            $after = $afterValues[$column];
-            // filters changes
-            $columnDef = $this->_table->schema()->column($column);
-            $filter = $this->config('filter');
-            if (!$filter($before, $after, $column, $columnDef)) {
-                return true;
-            }
-            $column = $Columns->newEntity([
-                'changelog_id' => $changelog->id,
-                'column' => $column,
-                'before' => $before,
-                'after' => $after,
-            ]);
-            return $Columns->save($column, ['atomic' => false]);
-        }, array_keys($beforeValues));
-
-        if (in_array(false, $results)) {
-            return false;
-        }
-
-        return $entity;
+        $data = new ArrayObject([
+            'model' => $table->alias(),
+            'foreign_key' => $entity->get($table->primaryKey()),
+            'is_new' => $entity->isNew(),
+            'changelog_columns' => $changes,
+        ]);
+        $options = new ArrayObject([
+            'associated' => 'ChangelogColumns',
+            'atomic' => false
+        ]);
+        return $table->dispatchEvent('Changelog.saveChangelogRecords', compact('Changelogs', 'data', 'options'))->result;
     }
 
     /**
@@ -178,10 +206,100 @@ class ChangelogBehavior extends Behavior
         return $this->tableLocator()->get($this->config('columnTable'));
     }
 
-    public static function filterChanges($before, $after, $column, $columnDef)
+    /**
+     * Define additional events for filter
+     *
+     * {@inheritdoc}
+     */
+    public function implementedEvents()
     {
-        // filter null != ''
-        return $before != $after;
+        return parent::implementedEvents() + [
+            'Changelog.convertValues' => $this->config('convertValues'),
+            'Changelog.filterChanges' => $this->config('filterChanges'),
+            'Changelog.saveChangelogRecords' => $this->config('saveChangelogRecords')
+        ];
+    }
+
+    /**
+     * Default convert process
+     *
+     * @param \Cake\Event\Event $event The event for callback
+     * @return array couple of $before, $after
+     */
+    public function convertChangelogValues(Event $event)
+    {
+        /**
+         * @var \Cake\ORM\Entity $entity
+         * @var mixed $before
+         * @var mixed $after
+         * @var string $column
+         * @var array $columnDef
+         * @var \Cake\ORM\Table $table
+         * @var \Cake\ORM\Table $Columns
+         */
+        extract($event->data());
+
+        /**
+         * Date inputs sometime represents string value in
+         * entity. This converts value for comparison.
+         */
+        switch ($columnDef['type']) {
+            case 'date':
+            case 'datetime':
+            case 'time':
+                $baseType = $table->schema()->baseColumnType($column);
+                if ($baseType && Type::map($baseType)) {
+                    $driver = $table->connection()->driver();
+                    $before = Type::build($baseType)->toPHP($before, $driver);
+                    $after = Type::build($baseType)->toPHP($after, $driver);
+                }
+                break;
+        }
+
+        return [$before, $after];
+    }
+
+    /**
+     * Default filter
+     *
+     * @param \Cake\Event\Event $event The event for callback
+     * @return bool column is changed or not
+     */
+    public function filterChanges(Event $event)
+    {
+        /**
+         * @var \Cake\ORM\Entity $entity
+         * @var mixed $before
+         * @var mixed $after
+         * @var string $column
+         * @var array $columnDef
+         * @var \Cake\ORM\Table $table
+         * @var \Cake\ORM\Table $Columns
+         */
+        extract($event->data());
+
+        /**
+         * filter null != ''
+         */
+        return $before != $after ? $after : false;
+    }
+
+    /**
+     * Default save process
+     *
+     * @param \Cake\Event\Event $event The event for callback
+     * @param \Cake\ORM\Table $Changelogs The table for parent
+     * @param ArrayObject $data save data
+     * @param ArrayObject $options save options
+     * @return bool column is changed or not
+     */
+    public function saveChangelogRecords(Event $event, Table $Changelogs, ArrayObject $data, ArrayObject $options)
+    {
+        /**
+         * create saveRecord
+         */
+        $changelog = $Changelogs->newEntity((array)$data);
+        return $Changelogs->save($changelog, (array)$options);
     }
 
 }
