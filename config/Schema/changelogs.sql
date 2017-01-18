@@ -29,6 +29,6 @@ CREATE TABLE `changelogs` (
   `is_new` tinyint(1) NOT NULL DEFAULT '0',
   `created` datetime NOT NULL,
   `modified` datetime DEFAULT NULL,
-  PRIMARY KEY (`id`),,
+  PRIMARY KEY (`id`),
   KEY `model_foreign_key` (`model`,`foreign_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
