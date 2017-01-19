@@ -120,40 +120,39 @@ class ChangelogBehavior extends Behavior
             $before = $beforeValues[$column];
             $after = $afterValues[$column];
             $columnDef = $table->schema()->column($column);
-            $eventData = compact([
+
+            /**
+             * Event data. thes variables can be changed via registered events.
+             */
+            $eventData = new ArrayObject(compact([
                 'entity',
                 'before',
                 'after',
+                'beforeValues',
+                'afterValues',
                 'column',
                 'columnDef',
                 'table',
                 'Columns'
-            ]);
+            ]));
 
             /**
              * Dispatches convert event
              */
-            $event = $table->dispatchEvent('Changelog.convertValues', $eventData);
+            $event = $table->dispatchEvent('Changelog.convertValues', [$eventData]);
+
+            /**
+             * Dispatches filter event
+             */
+            $event = $table->dispatchEvent('Changelog.filterChanges', [$eventData]);
             if (!$event->result) {
                 continue;
             }
 
             /**
-             * Expected 2 count array for event result 
-             */
-            if (!is_array($event->result) || count($event->result) !== 2) {
-                throw new UnexpectedValueException(sprintf(__d('changelog', 'The result for `Changelog.convertValue` event should be array with count 2, before, after. actually: %s')), var_export($event->result, true));
-            }
-            list($before, $after) = $event->result;
-            $eventData = compact('before', 'after') + $eventData;
-
-            /**
-             * Dispatches filter event
-             */
-            $event = $table->dispatchEvent('Changelog.filterChanges', $eventData);
-            /**
              * Determine changes from result
              */
+            extract((array)$eventData);
             if ($event->result) {
                 $changes[] = [
                     'column' => $column,
@@ -224,20 +223,32 @@ class ChangelogBehavior extends Behavior
      * Default convert process
      *
      * @param \Cake\Event\Event $event The event for callback
+     * @param ArrayObject $data The event data. contains:
+     *                          - entity
+     *                          - before
+     *                          - after
+     *                          - beforeValues
+     *                          - afterValues
+     *                          - column
+     *                          - columnDef
+     *                          - table
+     *                          - Columns
      * @return array couple of $before, $after
      */
-    public function convertChangelogValues(Event $event)
+    public function convertChangelogValues(Event $event, ArrayObject $data)
     {
+        extract((array)$data);
         /**
          * @var \Cake\ORM\Entity $entity
          * @var mixed $before
          * @var mixed $after
+         * @var array $beforeValues
+         * @var array $afterValues
          * @var string $column
          * @var array $columnDef
          * @var \Cake\ORM\Table $table
          * @var \Cake\ORM\Table $Columns
          */
-        extract($event->data());
 
         /**
          * Date inputs sometime represents string value in
@@ -252,36 +263,54 @@ class ChangelogBehavior extends Behavior
                     $driver = $table->connection()->driver();
                     $before = Type::build($baseType)->toPHP($before, $driver);
                     $after = Type::build($baseType)->toPHP($after, $driver);
+
+                    /**
+                     * Modify event data
+                     */
+                    $data['before'] = $before;
+                    $data['after'] = $after;
+                    $data['beforeValues'][$column] = $before;
+                    $data['afterValues'][$column] = $after;
                 }
                 break;
         }
-
-        return [$before, $after];
     }
 
     /**
      * Default filter
      *
      * @param \Cake\Event\Event $event The event for callback
+     * @param ArrayObject $data The event data. contains:
+     *                          - entity
+     *                          - before
+     *                          - after
+     *                          - beforeValues
+     *                          - afterValues
+     *                          - column
+     *                          - columnDef
+     *                          - table
+     *                          - Columns
      * @return bool column is changed or not
      */
-    public function filterChanges(Event $event)
+    public function filterChanges(Event $event, ArrayObject $data)
     {
+        extract((array)$data);
         /**
          * @var \Cake\ORM\Entity $entity
          * @var mixed $before
          * @var mixed $after
+         * @var array $beforeValues
+         * @var array $afterValues
          * @var string $column
          * @var array $columnDef
          * @var \Cake\ORM\Table $table
          * @var \Cake\ORM\Table $Columns
          */
-        extract($event->data());
 
         /**
          * filter null != ''
          */
-        return $before != $after ? $after : false;
+        return $before != $after;
     }
 
     /**
