@@ -6,9 +6,22 @@ use Cake\Datasource\ConnectionManager;
 use Cake\ORM\Table;
 use Cake\ORM\TableRegistry;
 use Cake\TestSuite\TestCase;
+use Cake\Utility\Inflector;
 use Exception;
 
 use Changelog\Model\Behavior\ChangelogBehavior;
+
+function table($name) {
+    $table = Inflector::underscore($name);
+    $alias = Inflector::camelize($name);
+    $class = __NAMESPACE__ . '\\' . $alias . 'Table';
+    $connection = ConnectionManager::get('test');
+    return new $class([
+        'alias' => $alias,
+        'table' => $table,
+        'connection' => $connection
+    ]);
+}
 
 class ArticlesTable extends Table
 {
@@ -18,11 +31,18 @@ class ArticlesTable extends Table
         /**
          * make associations for test
          */
-        $this->belongsTo('Users');
-        $this->hasOne('EyeCatchImages');
-        $this->hasMany('Comments');
+        $this->belongsTo('Users', [
+            'targetTable' => table('Users'),
+        ]);
+        $this->hasOne('EyeCatchImages', [
+            'targetTable' => table('EyeCatchImages'),
+        ]);
+        $this->hasMany('Comments', [
+            'targetTable' => table('Comments'),
+        ]);
         $this->belongsToMany('Tags', [
-            'joinTable' => 'tagged',
+            'targetTable' => table('Tags'),
+            'through' => table('Tagged'),
         ]);
         $this->addBehavior('Changelog.Changelog');
     }
@@ -367,10 +387,8 @@ class ChangelogBehaviorTest extends TestCase
                 '_ids' => [1, 2]
             ],
         ]);
-        // make use association be dirty
-        $article->dirty('user', true);
-        debug($article);
 
+        // do save actually
         $result = $this->Articles->save($article);
         $this->assertNotEmpty($result);
 
@@ -390,6 +408,7 @@ class ChangelogBehaviorTest extends TestCase
                 'ChangelogColumns.column' => 'user',
             ])
             ->first();
+        $this->assertNotEmpty($changelog);
         debug($userChange);
     }
 

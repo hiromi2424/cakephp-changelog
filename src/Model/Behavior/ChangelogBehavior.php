@@ -6,7 +6,7 @@ use ArrayObject;
 use Cake\Database\Type;
 use Cake\Datasource\EntityInterface;
 use Cake\Event\Event;
-use Cake\ORM\Association\Association;
+use Cake\ORM\Association;
 use Cake\ORM\Association\BelongsTo;
 use Cake\ORM\Behavior;
 use Cake\ORM\Locator\LocatorAwareTrait;
@@ -38,8 +38,10 @@ class ChangelogBehavior extends Behavior
         'changelogTable' => 'Changelog.Changelogs',
         'columnTable' => 'Changelog.ChangelogColumns',
         'combinations' => [],
+        'convertForeignKeys' => true,
         'convertDatetimeColumns' => true,
         'equalComparison' => true,
+        'exchangeForeignKey' => true,
         'filterForeignKeys' => true,
         'ignoreColumns' => [
             'id',
@@ -139,8 +141,10 @@ class ChangelogBehavior extends Behavior
         $foreignKeys = collection($table->associations())
             ->filter(function ($association) {
                 return $association instanceof BelongsTo;
-            })->map(function ($association) {
+            })->combine(function ($association) {
                 return $association->foreignKey();
+            }, function ($association) {
+                return $association;
             })->toArray();
         foreach (array_keys($beforeValues) as $column) {
             /**
@@ -150,7 +154,7 @@ class ChangelogBehavior extends Behavior
             $after = $afterValues[$column];
 
             $isAssociation = array_key_exists($column, $associations);
-            $isForeignKey = in_array($column, $foreignKeys);
+            $isForeignKey = array_key_exists($column, $foreignKeys);
 
             /**
              * Prepare association/column info
@@ -161,6 +165,9 @@ class ChangelogBehavior extends Behavior
             } else {
                 $columnDef = $table->schema()->column($column);
                 $association = null;
+                if ($isForeignKey) {
+                    $association = $foreignKeys[$column];
+                }
             }
 
             /**
@@ -217,16 +224,46 @@ class ChangelogBehavior extends Behavior
         /**
          * Make combinations
          */
-        foreach ($this->config('combinations') as $name => $settings) {
-            if (!is_array($settings)) {
-                throw new UnexpectedValueException(__d('changelog', 'Changelog: `combinations` option should be array'));
-            }
-            if (!isset($settings['columns']) || !is_array($settings['columns'])) {
-                throw new UnexpectedValueException(__d('changelog', 'Changelog: `combinations` option should have `columns` key and value as array of columns'));
-            }
+        if ($combinations = $this->config('combinations')) {
+            $indexedByColumn = collection($changes)->indexBy('column')->toArray();
+            foreach ($combinations as $name => $settings) {
+                if (!is_array($settings)) {
+                    throw new UnexpectedValueException(__d('changelog', 'Changelog: `combinations` option should be array'));
+                }
 
-            foreach ($variable as $key => $value) {
-                # code...
+                /**
+                 * If numric keys e.g. ['first_name', 'last_name'] given, Handles it
+                 * as a list of columns.
+                 */
+                if (Hash::numeric($settings)) {
+                    $settings = ['columns' => $settings];
+                }
+
+                if (!isset($settings['columns']) || !is_array($settings['columns'])) {
+                    throw new UnexpectedValueException(__d('changelog', 'Changelog: `combinations` option should have `columns` key and value as array of columns'));
+                }
+
+                $values = [];
+                foreach ($settings['columns'] as $column) {
+                    if (!isset($indexedByColumn[$column])) {
+                        continue 2;
+                    }
+
+                    $values['before'][$column] = $indexedByColumn[$column]['before'];
+                    $values['after'][$column] = $indexedByColumn[$column]['after'];
+                }
+
+                $indexedByColumn = array_diff_key($indexedByColumn, array_flip($settings['columns']));
+                if (isset($settings['convert'])) {
+                    $convert = $settings['convert'];
+                    $indexedByColumn[$name] = $convert($name, $values['before'], $values['after']);
+                } else {
+                    $indexedByColumn[$name] = [
+                        'column' => $name,
+                        'before' => implode(' ', $values['before']),
+                        'after' => implode(' ', $values['after']),
+                    ];
+                }
             }
         }
 
@@ -335,6 +372,24 @@ class ChangelogBehavior extends Behavior
         }
 
         /**
+         * Converts foreign keys. This converts belongsTo ID columns to associated
+         * entity. Then it takes display field for the table.
+         */
+        if ($isForeignKey && $this->config('convertForeignKeys')) {
+            if ($this->conifig('exchangeForeignKey')) {
+                unset($data['beforeValues'][$column]);
+                unset($data['afterValues'][$column]);
+                $column = $association->property();
+                $data['column'] = $column;
+            }
+
+            $before = $association->findById($before)->first();
+            $after = $association->findById($after)->first();
+            $before = $this->convertAssociationChangeValue($before, $association, 'before');
+            $after = $this->convertAssociationChangeValue($after, $association, 'after');
+        }
+
+        /**
          * Converts associations
          */
         $converter = $this->config('convertAssociations');
@@ -362,6 +417,10 @@ class ChangelogBehavior extends Behavior
      */
     public function convertAssociationChangeValue($value, $association, $kind)
     {
+        if (!$value) {
+            return $value;
+        }
+
         $displayField = $association->displayField();
         if (in_array($association->type(), [Association::MANY_TO_MANY, Association::ONE_TO_MANY])) {
             $entities = (array)$value;
