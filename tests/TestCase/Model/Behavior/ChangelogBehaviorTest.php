@@ -3,6 +3,7 @@ namespace Changelog\Test\TestCase\Model\Behavior;
 
 use Cake\Core\Configure;
 use Cake\Datasource\ConnectionManager;
+use Cake\I18n\I18n;
 use Cake\ORM\Table;
 use Cake\ORM\TableRegistry;
 use Cake\TestSuite\TestCase;
@@ -158,6 +159,9 @@ class ChangelogBehaviorTest extends TestCase
         $this->Articles = table('Articles');
         $this->Changelogs = TableRegistry::get('Changelog.Changelogs');
         $this->ChangelogColumns = TableRegistry::get('Changelog.ChangelogColumns');
+
+        $this->backupLocale = I18n::locale();
+        I18n::locale('en_US');
     }
     /**
      * tearDown method
@@ -172,6 +176,7 @@ class ChangelogBehaviorTest extends TestCase
             $this->Changelogs,
             $this->ChangelogColumns
             );
+        I18n::locale($this->backupLocale);
         parent::tearDown();
     }
 
@@ -326,7 +331,7 @@ class ChangelogBehaviorTest extends TestCase
                 '_ids' => [1, 2]
             ],
         ]);
-        // belongsTo property is not changed dirty states.
+        // Dirty states of belongsToMany properties are not changed.
         // Making dirty can be done on userland's code.
         $article->dirty('tags', true);
 
@@ -354,8 +359,6 @@ class ChangelogBehaviorTest extends TestCase
         $this->assertSame('nate', $userChange->after);
 
         // find record for hasOne association
-        // FIMME:
-        /*
         $eyeCatchChange = $this->ChangelogColumns->find()
             ->where([
                 'ChangelogColumns.changelog_id' => $changelog->id,
@@ -365,7 +368,19 @@ class ChangelogBehaviorTest extends TestCase
         $this->assertNotEmpty($eyeCatchChange);
         $this->assertSame('before.png', $eyeCatchChange->before);
         $this->assertSame('after.jpg', $eyeCatchChange->after);
-        */
+
+        // find record for hasMany association
+        $commentsChange = $this->ChangelogColumns->find()
+            ->where([
+                'ChangelogColumns.changelog_id' => $changelog->id,
+                'ChangelogColumns.column' => 'comments',
+            ])
+            ->first();
+        $this->assertNotEmpty($commentsChange);
+
+        // but Comments table is associated with hasMany
+        // that defaults 'append' save strategy.
+        // this is
     }
 
     /**
@@ -379,15 +394,8 @@ class ChangelogBehaviorTest extends TestCase
         $this->Articles->behaviors()->get('Changelog')->config('combinations', [
             'publish_at_title' => ['publish_at', 'title'],
         ]);
-        // articles->id = 1 has all association data
-        $article = $this->Articles->get(1, [
-            'contain' => [
-                'Users',
-                'EyeCatchImages',
-                'Comments',
-                'Tags',
-            ],
-        ]);
+        // articles->id = 1 has all association data.
+        $article = $this->Articles->get(1);
         // modify all associations
         $article = $this->Articles->patchEntity($article, [
             'publish_at' => '2017/01/14 00:00',
@@ -415,7 +423,7 @@ class ChangelogBehaviorTest extends TestCase
             ])
             ->first();
         $this->assertNotEmpty($combinedChange);
-        $this->assertSame(' First Article', $combinedChange->before);
+        $this->assertSame('First Article', $combinedChange->before);
         $this->assertSame('1/14/17, 12:00 AM changed title', $combinedChange->after);
     }
 

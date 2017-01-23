@@ -55,6 +55,8 @@ class ChangelogBehavior extends Behavior
         'onAfterSave' => true
     ];
 
+    protected $_collectedBeforeValues = null;
+
     /**
      * Initialize tableLocator also.
      *
@@ -69,6 +71,48 @@ class ChangelogBehavior extends Behavior
     }
 
     /**
+     * beforeSave callback.
+     * Collects original values of associations.
+     *
+     * {@inheritdoc}
+     */
+    public function beforeSave(Event $event, EntityInterface $entity, ArrayObject $options)
+    {
+        $this->collectChangelogBeforeValues($entity);
+    }
+
+    public function collectChangelogBeforeValues($entity)
+    {
+        $this->_collectedBeforeValues = [];
+        $associations = $this->_associationsIndexedByProperty();
+        foreach ($entity->getOriginalValues() as $key => $value) {
+            if (isset($associations[$key])) {
+                $association = $associations[$key];
+                if (in_array($association->type(), [Association::MANY_TO_MANY, Association::ONE_TO_MANY])) {
+                    $values = (array)$value;
+                    foreach ($values as $i => $v) {
+                        if ($v instanceof EntityInterface) {
+                            $values[$i] = $v->getOriginalValues();
+                        } else {
+                            $values[$i] = $v;
+                        }
+                    }
+                    $this->_collectedBeforeValues[$key] = $values;
+                } else {
+                    if ($value instanceof EntityInterface) {
+                        $this->_collectedBeforeValues[$key] = $value->getOriginalValues();
+                    } else {
+                        $this->_collectedBeforeValues[$key] = $value;
+                    }
+                }
+            }
+        }
+        debug($this->_collectedBeforeValues);
+
+        return $this->_collectedBeforeValues;
+    }
+
+    /**
      * afterSave callback.
      * This logs entities when `onAfterSave` option was turned on.
      *
@@ -77,7 +121,7 @@ class ChangelogBehavior extends Behavior
     public function afterSave(Event $event, EntityInterface $entity, ArrayObject $options)
     {
         if ($this->config('onAfterSave')) {
-            $this->saveChangelog($entity);
+            $this->saveChangelog($entity, $options);
         }
     }
 
@@ -87,8 +131,15 @@ class ChangelogBehavior extends Behavior
      * @param \Cake\Datasource\EntityInterface $entity The entity object to log changes.
      * @return \Cake\Datasource\EntityInterface|bool Entity object when logged otherwise `false`.
      */
-    public function saveChangelog(EntityInterface $entity)
+    public function saveChangelog(EntityInterface $entity, $options = [])
     {
+        /**
+         * Custom before values can be set via save options.
+         */
+        if ($options && $options['collectedBeforeValues']) {
+            $this->_collectedBeforeValues = $options['collectedBeforeValues'];
+        }
+
         $Changelogs = $this->getChangelogTable();
         $Columns = $this->getColumnTable();
         $table = $this->_table;
@@ -133,20 +184,8 @@ class ChangelogBehavior extends Behavior
          * Filters changes
          */
         $changes = [];
-        $associations = collection($table->associations())
-            ->combine(function ($association) {
-                return $association->property();
-            }, function ($association) {
-                return $association;
-            })->toArray();
-        $foreignKeys = collection($table->associations())
-            ->filter(function ($association) {
-                return $association instanceof BelongsTo;
-            })->combine(function ($association) {
-                return $association->foreignKey();
-            }, function ($association) {
-                return $association;
-            })->toArray();
+        $associations = $this->_associationsIndexedByProperty();
+        $foreignKeys = $this->_associationsForForeignKey;
         foreach ($columns as $column) {
             /**
              * Prepare values for events
@@ -266,8 +305,8 @@ class ChangelogBehavior extends Behavior
                 } else {
                     $indexedByColumn[$name] = [
                         'column' => $name,
-                        'before' => implode(' ', $values['before']),
-                        'after' => implode(' ', $values['after']),
+                        'before' => implode(' ', array_filter($values['before'])),
+                        'after' => implode(' ', array_filter($values['after'])),
                     ];
                 }
             }
@@ -288,6 +327,40 @@ class ChangelogBehavior extends Behavior
             'atomic' => false
         ]);
         return $table->dispatchEvent('Changelog.saveChangelogRecords', compact('Changelogs', 'data', 'options'))->result;
+    }
+
+    /**
+     * Helper method to get table associations array
+     * indexed by these properties.
+     *
+     * @return \Cake\ORM\Association[]
+     */
+    protected function _associationsIndexedByProperty()
+    {
+        return collection($this->_table->associations())
+            ->combine(function ($association) {
+                return $association->property();
+            }, function ($association) {
+                return $association;
+            })->toArray();
+    }
+
+    /**
+     * Helper method to get associations array that table has
+     * foreign key (means BelongsTo) indexed by foreign key.
+     *
+     * @return \Cake\ORM\Association[]
+     */
+    protected function _associationsForForeignKey()
+    {
+        return collection($this->_table->associations())
+            ->filter(function ($association) {
+                return $association instanceof BelongsTo;
+            })->combine(function ($association) {
+                return $association->foreignKey();
+            }, function ($association) {
+                return $association;
+            })->toArray();
     }
 
     /**
@@ -433,14 +506,14 @@ class ChangelogBehavior extends Behavior
             $entities = (array)$value;
             foreach ($entities as $i => $entity) {
                 if ($entity instanceof EntityInterface) {
-                    $entities[$i] = $entity->{$displayField};
+                    $entities[$i] = $entity->getOriginal($displayField);
                 }
             }
 
             return implode(', ', $entities);
         }
 
-        return $value->{$displayField};
+        return $value->getOriginal($displayField);
     }
 
     /**
