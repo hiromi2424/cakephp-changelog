@@ -38,6 +38,7 @@ class ChangelogBehavior extends Behavior
         'changelogTable' => 'Changelog.Changelogs',
         'columnTable' => 'Changelog.ChangelogColumns',
         'combinations' => [],
+        'convertDatetimeColumns' => true,
         'equalComparison' => true,
         'filterForeignKeys' => true,
         'ignoreColumns' => [
@@ -102,10 +103,16 @@ class ChangelogBehavior extends Behavior
         $columns = array_keys($entity->getOriginalValues());
 
         /**
-         * Extract before/changed values with using column names
+         * Extract dirty columns.
+         * Exchange columns to actually dirty ones.
          */
-        $beforeValues = $entity->extractOriginalChanged($columns);
         $afterValues = $entity->extract($columns, $isDirty = true);
+        $columns = array_keys($afterValues);
+
+        /**
+         * Extract original value from decided columns.
+         */
+        $beforeValues = $entity->extractOriginal($columns);
 
         /**
          * Filters ignored columns

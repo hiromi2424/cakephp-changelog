@@ -6,7 +6,8 @@ use Cake\TestSuite\Fixture\TestFixture;
 /**
  * Comments Fixture
  */
-class CommentsFixture extends TestFixture {
+class CommentsFixture extends TestFixture
+{
 
     /**
      * Fields

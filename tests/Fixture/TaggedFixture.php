@@ -6,7 +6,13 @@ use Cake\TestSuite\Fixture\TestFixture;
 /**
  * Tagged Fixture
  */
-class TaggedFixture extends TestFixture {
+class TaggedFixture extends TestFixture
+{
+
+    /**
+     * {@inheritdoc}
+     */
+    public $table = 'tagged';
 
     /**
      * Fields

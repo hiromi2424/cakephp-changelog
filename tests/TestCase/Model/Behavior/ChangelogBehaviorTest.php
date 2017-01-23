@@ -22,7 +22,7 @@ class ArticlesTable extends Table
         $this->hasOne('EyeCatchImages');
         $this->hasMany('Comments');
         $this->belongsToMany('Tags', [
-            'through' => 'Tagged',
+            'joinTable' => 'tagged',
         ]);
         $this->addBehavior('Changelog.Changelog');
     }
@@ -103,6 +103,34 @@ class ChangelogBehaviorTest extends TestCase
     public $Users;
 
     /**
+     * EyeCatchImage test model
+     *
+     * @var EyeCatchImagesTable
+     */
+    public $EyeCatchImages;
+
+    /**
+     * Comment test model
+     *
+     * @var CommentsTable
+     */
+    public $Comments;
+
+    /**
+     * Tagged test model
+     *
+     * @var TaggedTable
+     */
+    public $Tagged;
+
+    /**
+     * Tag test model
+     *
+     * @var TagsTable
+     */
+    public $Tags;
+
+    /**
      * Changelog test model
      *
      * @var ChangelogsTable
@@ -147,10 +175,24 @@ class ChangelogBehaviorTest extends TestCase
             'table' => 'articles',
             'connection' => $this->connection
         ]);
-
-        $this->Articles = new ArticlesTable([
-            'alias' => 'Articles',
-            'table' => 'articles',
+        $this->Users = new UsersTable([
+            'alias' => 'Users',
+            'table' => 'users',
+            'connection' => $this->connection
+        ]);
+        $this->Comments = new CommentsTable([
+            'alias' => 'Comments',
+            'table' => 'comments',
+            'connection' => $this->connection
+        ]);
+        $this->Tagged = new TaggedTable([
+            'alias' => 'Tagged',
+            'table' => 'tagged',
+            'connection' => $this->connection
+        ]);
+        $this->Tags = new TagsTable([
+            'alias' => 'Tags',
+            'table' => 'tags',
             'connection' => $this->connection
         ]);
         $this->Changelogs = TableRegistry::get('Changelog.Changelogs');
@@ -284,7 +326,6 @@ class ChangelogBehaviorTest extends TestCase
             'publish_at' => '2017/01/14 00:00'
         ]);
         $result = $this->Articles->saveChangelog($article);
-        debug($result);
         $this->assertEmpty($result);
     }
 
@@ -326,9 +367,30 @@ class ChangelogBehaviorTest extends TestCase
                 '_ids' => [1, 2]
             ],
         ]);
-        //debug($article);
-        $result = $this->Articles->saveChangelog($article);
+        // make use association be dirty
+        $article->dirty('user', true);
+        debug($article);
+
+        $result = $this->Articles->save($article);
         $this->assertNotEmpty($result);
+
+        // find parent table changelogs record
+        $changelog = $this->Changelogs->find()
+            ->where([
+                'model' => 'Articles',
+                'foreign_key' => 1
+            ])
+            ->first();
+        $this->assertNotEmpty($changelog);
+
+        // find record for hasOne association
+        $userChange = $this->ChangelogColumns->find()
+            ->where([
+                'ChangelogColumns.changelog_id' => $changelog->id,
+                'ChangelogColumns.column' => 'user',
+            ])
+            ->first();
+        debug($userChange);
     }
 
 }
