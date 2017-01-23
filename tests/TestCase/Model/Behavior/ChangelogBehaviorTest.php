@@ -116,41 +116,6 @@ class ChangelogBehaviorTest extends TestCase
     public $Articles;
 
     /**
-     * User test model
-     *
-     * @var UsersTable
-     */
-    public $Users;
-
-    /**
-     * EyeCatchImage test model
-     *
-     * @var EyeCatchImagesTable
-     */
-    public $EyeCatchImages;
-
-    /**
-     * Comment test model
-     *
-     * @var CommentsTable
-     */
-    public $Comments;
-
-    /**
-     * Tagged test model
-     *
-     * @var TaggedTable
-     */
-    public $Tagged;
-
-    /**
-     * Tag test model
-     *
-     * @var TagsTable
-     */
-    public $Tags;
-
-    /**
      * Changelog test model
      *
      * @var ChangelogsTable
@@ -190,31 +155,7 @@ class ChangelogBehaviorTest extends TestCase
         parent::setUp();
         $this->connection = ConnectionManager::get('test');
 
-        $this->Articles = new ArticlesTable([
-            'alias' => 'Articles',
-            'table' => 'articles',
-            'connection' => $this->connection
-        ]);
-        $this->Users = new UsersTable([
-            'alias' => 'Users',
-            'table' => 'users',
-            'connection' => $this->connection
-        ]);
-        $this->Comments = new CommentsTable([
-            'alias' => 'Comments',
-            'table' => 'comments',
-            'connection' => $this->connection
-        ]);
-        $this->Tagged = new TaggedTable([
-            'alias' => 'Tagged',
-            'table' => 'tagged',
-            'connection' => $this->connection
-        ]);
-        $this->Tags = new TagsTable([
-            'alias' => 'Tags',
-            'table' => 'tags',
-            'connection' => $this->connection
-        ]);
+        $this->Articles = table('Articles');
         $this->Changelogs = TableRegistry::get('Changelog.Changelogs');
         $this->ChangelogColumns = TableRegistry::get('Changelog.ChangelogColumns');
     }
@@ -351,11 +292,7 @@ class ChangelogBehaviorTest extends TestCase
 
     /**
      * Test saveChangelog() method
-     * Belows are test for NULL => '' is not change for text column.
-     * This scenario is happen when body input was not placed at your
-     * form on add action and was placed on edit action.
-     * So before value was NULL and after value was '' so that entity
-     * handles these as different values.
+     * Associations should be converted to display field.
      *
      * @test
      */
@@ -363,12 +300,14 @@ class ChangelogBehaviorTest extends TestCase
     {
         // articles->id = 1 has all association data
         $article = $this->Articles->get(1, [
-            'Users',
-            'EyeCatchImages',
-            'Comments',
-            'Tags',
+            'contain' => [
+                'Users',
+                'EyeCatchImages',
+                'Comments',
+                'Tags',
+            ],
         ]);
-        // modigy all associations
+        // modify all associations
         $article = $this->Articles->patchEntity($article, [
             'publish_at' => '2017/01/14 00:00',
             // belongsTo
@@ -387,6 +326,73 @@ class ChangelogBehaviorTest extends TestCase
                 '_ids' => [1, 2]
             ],
         ]);
+        // belongsTo property is not changed dirty states.
+        // Making dirty can be done on userland's code.
+        $article->dirty('tags', true);
+
+        // do save actually
+        $result = $this->Articles->save($article);
+        $this->assertNotEmpty($result);
+
+        // find parent table changelogs record
+        $changelog = $this->Changelogs->find()
+            ->where([
+                'model' => 'Articles',
+                'foreign_key' => 1
+            ])->contain('ChangelogColumns')
+            ->first();
+        $this->assertNotEmpty($changelog);
+
+        // find record for belongsTo association
+        $userChange = $this->ChangelogColumns->find()
+            ->where([
+                'ChangelogColumns.changelog_id' => $changelog->id,
+                'ChangelogColumns.column' => 'user',
+            ])
+            ->first();
+        $this->assertNotEmpty($userChange);
+        $this->assertSame('nate', $userChange->after);
+
+        // find record for hasOne association
+        // FIMME:
+        /*
+        $eyeCatchChange = $this->ChangelogColumns->find()
+            ->where([
+                'ChangelogColumns.changelog_id' => $changelog->id,
+                'ChangelogColumns.column' => 'eye_catch_image',
+            ])
+            ->first();
+        $this->assertNotEmpty($eyeCatchChange);
+        $this->assertSame('before.png', $eyeCatchChange->before);
+        $this->assertSame('after.jpg', $eyeCatchChange->after);
+        */
+    }
+
+    /**
+     * Test saveChangelog() method
+     * Associations should be converted to display field.
+     *
+     * @test
+     */
+    public function saveChangelogCombinations()
+    {
+        $this->Articles->behaviors()->get('Changelog')->config('combinations', [
+            'publish_at_title' => ['publish_at', 'title'],
+        ]);
+        // articles->id = 1 has all association data
+        $article = $this->Articles->get(1, [
+            'contain' => [
+                'Users',
+                'EyeCatchImages',
+                'Comments',
+                'Tags',
+            ],
+        ]);
+        // modify all associations
+        $article = $this->Articles->patchEntity($article, [
+            'publish_at' => '2017/01/14 00:00',
+            'title' => 'changed title',
+        ]);
 
         // do save actually
         $result = $this->Articles->save($article);
@@ -401,15 +407,16 @@ class ChangelogBehaviorTest extends TestCase
             ->first();
         $this->assertNotEmpty($changelog);
 
-        // find record for hasOne association
-        $userChange = $this->ChangelogColumns->find()
+        // find combined column
+        $combinedChange = $this->ChangelogColumns->find()
             ->where([
                 'ChangelogColumns.changelog_id' => $changelog->id,
-                'ChangelogColumns.column' => 'user',
+                'ChangelogColumns.column' => 'publish_at_title',
             ])
             ->first();
-        $this->assertNotEmpty($changelog);
-        debug($userChange);
+        $this->assertNotEmpty($combinedChange);
+        $this->assertSame(' First Article', $combinedChange->before);
+        $this->assertSame('1/14/17, 12:00 AM changed title', $combinedChange->after);
     }
 
 }

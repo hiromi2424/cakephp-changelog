@@ -38,6 +38,7 @@ class ChangelogBehavior extends Behavior
         'changelogTable' => 'Changelog.Changelogs',
         'columnTable' => 'Changelog.ChangelogColumns',
         'combinations' => [],
+        'convertAssociations' => true,
         'convertForeignKeys' => true,
         'convertDatetimeColumns' => true,
         'equalComparison' => true,
@@ -146,7 +147,7 @@ class ChangelogBehavior extends Behavior
             }, function ($association) {
                 return $association;
             })->toArray();
-        foreach (array_keys($beforeValues) as $column) {
+        foreach ($columns as $column) {
             /**
              * Prepare values for events
              */
@@ -235,7 +236,7 @@ class ChangelogBehavior extends Behavior
                  * If numric keys e.g. ['first_name', 'last_name'] given, Handles it
                  * as a list of columns.
                  */
-                if (Hash::numeric($settings)) {
+                if (Hash::numeric(array_keys($settings))) {
                     $settings = ['columns' => $settings];
                 }
 
@@ -246,14 +247,19 @@ class ChangelogBehavior extends Behavior
                 $values = [];
                 foreach ($settings['columns'] as $column) {
                     if (!isset($indexedByColumn[$column])) {
-                        continue 2;
+                        $values['before'][$column] = $entity->get($column);
+                        $values['after'][$column] = $entity->get($column);
+                    } else {
+                        $values['before'][$column] = $indexedByColumn[$column]['before'];
+                        $values['after'][$column] = $indexedByColumn[$column]['after'];
                     }
-
-                    $values['before'][$column] = $indexedByColumn[$column]['before'];
-                    $values['after'][$column] = $indexedByColumn[$column]['after'];
                 }
 
                 $indexedByColumn = array_diff_key($indexedByColumn, array_flip($settings['columns']));
+                if ($values['before'] == $values['after']) {
+                    continue;
+                }
+
                 if (isset($settings['convert'])) {
                     $convert = $settings['convert'];
                     $indexedByColumn[$name] = $convert($name, $values['before'], $values['after']);
@@ -265,6 +271,7 @@ class ChangelogBehavior extends Behavior
                     ];
                 }
             }
+            $changes = array_values($indexedByColumn);
         }
 
         /**
@@ -376,7 +383,7 @@ class ChangelogBehavior extends Behavior
          * entity. Then it takes display field for the table.
          */
         if ($isForeignKey && $this->config('convertForeignKeys')) {
-            if ($this->conifig('exchangeForeignKey')) {
+            if ($this->config('exchangeForeignKey')) {
                 unset($data['beforeValues'][$column]);
                 unset($data['afterValues'][$column]);
                 $column = $association->property();
@@ -426,7 +433,7 @@ class ChangelogBehavior extends Behavior
             $entities = (array)$value;
             foreach ($entities as $i => $entity) {
                 if ($entity instanceof EntityInterface) {
-                    $value[$i] = $entity->{$displayField};
+                    $entities[$i] = $entity->{$displayField};
                 }
             }
 
