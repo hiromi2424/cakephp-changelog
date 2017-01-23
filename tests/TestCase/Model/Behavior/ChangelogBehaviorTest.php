@@ -15,7 +15,66 @@ class ArticlesTable extends Table
     public function initialize(array $config)
     {
         parent::initialize($config);
+        /**
+         * make associations for test
+         */
+        $this->belongsTo('Users');
+        $this->hasOne('EyeCatchImages');
+        $this->hasMany('Comments');
+        $this->belongsToMany('Tags', [
+            'through' => 'Tagged',
+        ]);
         $this->addBehavior('Changelog.Changelog');
+    }
+}
+
+class UsersTable extends Table
+{
+    public function initialize(array $config)
+    {
+        parent::initialize($config);
+        $this->primaryKey('id');
+        $this->displayField('username');
+    }
+}
+
+class EyeCatchImagesTable extends Table
+{
+    public function initialize(array $config)
+    {
+        parent::initialize($config);
+        $this->primaryKey('id');
+        $this->displayField('file');
+    }
+}
+
+class CommentsTable extends Table
+{
+    public function initialize(array $config)
+    {
+        parent::initialize($config);
+        $this->primaryKey('id');
+        $this->displayField('id');
+    }
+}
+
+class TaggedTable extends Table
+{
+    public function initialize(array $config)
+    {
+        parent::initialize($config);
+        $this->primaryKey('id');
+        $this->displayField('id');
+    }
+}
+
+class TagsTable extends Table
+{
+    public function initialize(array $config)
+    {
+        parent::initialize($config);
+        $this->primaryKey('id');
+        $this->displayField('name');
     }
 }
 
@@ -35,6 +94,13 @@ class ChangelogBehaviorTest extends TestCase
      * @var ArticlesTable
      */
     public $Articles;
+
+    /**
+     * User test model
+     *
+     * @var UsersTable
+     */
+    public $Users;
 
     /**
      * Changelog test model
@@ -59,6 +125,11 @@ class ChangelogBehaviorTest extends TestCase
         'plugin.changelog.articles',
         'plugin.changelog.changelogs',
         'plugin.changelog.changelog_columns',
+        'plugin.changelog.comments',
+        'plugin.changelog.eye_catch_images',
+        'plugin.changelog.tagged',
+        'plugin.changelog.tags',
+        'plugin.changelog.users'
     ];
 
     /**
@@ -76,6 +147,12 @@ class ChangelogBehaviorTest extends TestCase
             'table' => 'articles',
             'connection' => $this->connection
         ]);
+
+        $this->Articles = new ArticlesTable([
+            'alias' => 'Articles',
+            'table' => 'articles',
+            'connection' => $this->connection
+        ]);
         $this->Changelogs = TableRegistry::get('Changelog.Changelogs');
         $this->ChangelogColumns = TableRegistry::get('Changelog.ChangelogColumns');
     }
@@ -86,7 +163,12 @@ class ChangelogBehaviorTest extends TestCase
      */
     public function tearDown()
     {
-        unset($this->connection, $this->Articles);
+        unset(
+            $this->connection,
+            $this->Articles,
+            $this->Changelogs,
+            $this->ChangelogColumns
+            );
         parent::tearDown();
     }
 
@@ -202,7 +284,51 @@ class ChangelogBehaviorTest extends TestCase
             'publish_at' => '2017/01/14 00:00'
         ]);
         $result = $this->Articles->saveChangelog($article);
+        debug($result);
         $this->assertEmpty($result);
+    }
+
+    /**
+     * Test saveChangelog() method
+     * Belows are test for NULL => '' is not change for text column.
+     * This scenario is happen when body input was not placed at your
+     * form on add action and was placed on edit action.
+     * So before value was NULL and after value was '' so that entity
+     * handles these as different values.
+     *
+     * @test
+     */
+    public function saveChangelogAssociation()
+    {
+        // articles->id = 1 has all association data
+        $article = $this->Articles->get(1, [
+            'Users',
+            'EyeCatchImages',
+            'Comments',
+            'Tags',
+        ]);
+        // modigy all associations
+        $article = $this->Articles->patchEntity($article, [
+            'publish_at' => '2017/01/14 00:00',
+            // belongsTo
+            'user_id' => 2,
+            // hasOne
+            'eye_catch_image' => [
+                'id' => 1,
+                'file' => 'after.png',
+            ],
+            // hasMany
+            'comments' => [
+                ['body' => 'Second Comment'],
+            ],
+            // belongsToMany
+            'tags' => [
+                '_ids' => [1, 2]
+            ],
+        ]);
+        //debug($article);
+        $result = $this->Articles->saveChangelog($article);
+        $this->assertNotEmpty($result);
     }
 
 }
