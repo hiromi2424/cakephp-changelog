@@ -45,8 +45,24 @@ class ArticlesTable extends Table
             'targetTable' => table('Tags'),
             'through' => table('Tagged'),
         ]);
-        $this->addBehavior('Changelog.Changelog');
+        $this->addBehavior('Changelog.Changelog', [
+            'convertAssociations' => [$this, 'convertAssociations']
+        ]);
     }
+
+    public function convertAssociations($property, $value, $kind, $association, $isMany, $beforeValues)
+    {
+        if ($property === 'comment') {
+            $values = $kind === 'before' ? $beforeValues : $value;
+            return collection($values)->extract('body')
+                ->map(function ($body) {
+                    Text::truncate($body, 5);
+                });
+        }
+
+        return $this->defaultConvertAssociation($property, $value, $kind, $association, $isMany, $beforeValues);
+    }
+
 }
 
 class UsersTable extends Table
@@ -367,7 +383,7 @@ class ChangelogBehaviorTest extends TestCase
             ->first();
         $this->assertNotEmpty($eyeCatchChange);
         $this->assertSame('before.png', $eyeCatchChange->before);
-        $this->assertSame('after.jpg', $eyeCatchChange->after);
+        $this->assertSame('after.png', $eyeCatchChange->after);
 
         // find record for hasMany association
         $commentsChange = $this->ChangelogColumns->find()
@@ -377,6 +393,7 @@ class ChangelogBehaviorTest extends TestCase
             ])
             ->first();
         $this->assertNotEmpty($commentsChange);
+        $this->assertSame('2', $commentsChange->after);
 
         // but Comments table is associated with hasMany
         // that defaults 'append' save strategy.

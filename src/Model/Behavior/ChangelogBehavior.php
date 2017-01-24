@@ -107,7 +107,6 @@ class ChangelogBehavior extends Behavior
                 }
             }
         }
-        debug($this->_collectedBeforeValues);
 
         return $this->_collectedBeforeValues;
     }
@@ -136,7 +135,7 @@ class ChangelogBehavior extends Behavior
         /**
          * Custom before values can be set via save options.
          */
-        if ($options && $options['collectedBeforeValues']) {
+        if ($options && isset($options['collectedBeforeValues'])) {
             $this->_collectedBeforeValues = $options['collectedBeforeValues'];
         }
 
@@ -185,7 +184,7 @@ class ChangelogBehavior extends Behavior
          */
         $changes = [];
         $associations = $this->_associationsIndexedByProperty();
-        $foreignKeys = $this->_associationsForForeignKey;
+        $foreignKeys = $this->_associationsForForeignKey();
         foreach ($columns as $column) {
             /**
              * Prepare values for events
@@ -477,7 +476,7 @@ class ChangelogBehavior extends Behavior
             /** 
              * If array was given, handles it as whitelist of associations
              */
-            if (!is_array($converter) || in_array($column, $converter)) {
+            if (!is_array($converter) || is_callable($converter) || in_array($column, $converter)) {
                 $before = $this->convertAssociationChangeValue($before, $association, 'before');
                 $after = $this->convertAssociationChangeValue($after, $association, 'after');
             }
@@ -498,22 +497,62 @@ class ChangelogBehavior extends Behavior
     public function convertAssociationChangeValue($value, $association, $kind)
     {
         if (!$value) {
-            return $value;
+            return is_array($value) ? null : $value;
         }
 
+        $isMany = in_array($association->type(), [Association::MANY_TO_MANY, Association::ONE_TO_MANY]);
+        $property = $association->property();
+        $beforeValues = Hash::get($this->_collectedBeforeValues, $property);
+
+        /**
+         * Call actual converter. callable can be set with `convertAssociations`
+         * option.
+         */
+        $converter = $this->config('convertAssociations');
+        $callable = is_callable($converter) ? $converter : [$this, 'defaultConvertAssociation'];
+        $arguments = [$property, $value, $kind, $association, $isMany, $beforeValues];
+
+        return call_user_func_array($callable, $arguments);
+    }
+
+    /**
+     * Default converter for association values.
+     *
+     * @param string $property association property name
+     * @param mixed $value expects EntityInterface/EntityInterface[]
+     * @param string $kind either 'before'/'after'
+     * @param \Cake\ORM\Association $association association object for the value
+     * @param boolean $isMany true => [hasMany, belongsToMany] false => [hasOne, belongsTo]
+     * @param array $beforeValues association original values. indexed by association properties.
+     * @return mixed converted value
+     */
+    public function defaultConvertAssociation($property, $value, $kind, $association, $isMany, $beforeValues)
+    {
         $displayField = $association->displayField();
-        if (in_array($association->type(), [Association::MANY_TO_MANY, Association::ONE_TO_MANY])) {
-            $entities = (array)$value;
-            foreach ($entities as $i => $entity) {
-                if ($entity instanceof EntityInterface) {
-                    $entities[$i] = $entity->getOriginal($displayField);
-                }
+        if ($kind === 'before' && !$beforeValues || !$value) {
+            return null;
+        }
+
+
+
+        // hasMany, belongsToMany
+        if ($isMany) {
+            $values = $kind === 'before' ? $beforeValues : (array)$value;
+            return implode(', ', collection($values)->extract($displayField)
+                ->filter()
+                ->toArray());
+        // hasOne, belongsTo
+        } else {
+            if (!$value instanceof EntityInterface) {
+                return $value;
             }
 
-            return implode(', ', $entities);
+            if ($kind === 'before') {
+                return Hash::get($beforeValues, $displayField);
+            } else {
+                return $value->get($displayField);
+            }
         }
-
-        return $value->getOriginal($displayField);
     }
 
     /**
