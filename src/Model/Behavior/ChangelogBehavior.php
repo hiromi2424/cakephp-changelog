@@ -131,6 +131,18 @@ class ChangelogBehavior extends Behavior
         $columns = array_keys($afterValues);
 
         /**
+         * Adds extra columns when combinations was given.
+         */
+        if ($combinations = $this->config('combinations')) {
+            foreach ($combinations as $name => $settings) {
+                $settings = $this->_normalizeCombinationSettings($settings);
+                $columns = array_merge($columns, $settings['columns']);
+            }
+            $columns = array_values(array_unique($columns));
+            $afterValues = $entity->extract($columns);
+        }
+
+        /**
          * Extract original value from decided columns.
          */
         $beforeValues = $entity->extractOriginal($columns);
@@ -225,44 +237,42 @@ class ChangelogBehavior extends Behavior
          * Make combinations
          */
         if ($combinations = $this->config('combinations')) {
-            $changes = $this->makeChangelogCombinations($changes, $combinations);
+            $changes = $this->makeChangelogCombinations($entity, $changes, $combinations);
         }
 
         return $this->_changes = $changes;
     }
 
-    public function makeChangelogCombinations(array $changes, array $combinations)
+    public function makeChangelogCombinations(EntityInterface $entity, array $changes, array $combinations)
     {
         $indexedByColumn = collection($changes)->indexBy('column')->toArray();
+        $removeKeys = [];
+        $foreignKeys = $this->_associationsForForeignKey();
         foreach ($combinations as $name => $settings) {
-            if (!is_array($settings)) {
-                throw new UnexpectedValueException(__d('changelog', 'Changelog: `combinations` option should be array'));
-            }
-
-            /**
-             * If numric keys e.g. ['first_name', 'last_name'] given, Handles it
-             * as a list of columns.
-             */
-            if (Hash::numeric(array_keys($settings))) {
-                $settings = ['columns' => $settings];
-            }
-
-            if (!isset($settings['columns']) || !is_array($settings['columns'])) {
-                throw new UnexpectedValueException(__d('changelog', 'Changelog: `combinations` option should have `columns` key and value as array of columns'));
-            }
+            $settings = $this->_normalizeCombinationSettings($settings);
 
             $values = [];
             foreach ($settings['columns'] as $column) {
                 if (!isset($indexedByColumn[$column])) {
-                    $values['before'][$column] = $entity->get($column);
-                    $values['after'][$column] = $entity->get($column);
+                    /**
+                     * convert foreign keys
+                     */
+                    if (isset($foreignKeys[$column])) {
+                        $association = $foreignKeys[$column];
+                        $column = $association->property();
+                        $values['before'][$column] = $indexedByColumn[$column]['after'];
+                        $values['after'][$column] = $indexedByColumn[$column]['after'];
+                    } else {
+                        $values['before'][$column] = $entity->get($column);
+                        $values['after'][$column] = $entity->get($column);
+                    }
+                    $removeKeys[] = $column;
                 } else {
                     $values['before'][$column] = $indexedByColumn[$column]['before'];
                     $values['after'][$column] = $indexedByColumn[$column]['after'];
                 }
             }
 
-            $indexedByColumn = array_diff_key($indexedByColumn, array_flip($settings['columns']));
             if ($values['before'] == $values['after']) {
                 continue;
             }
@@ -279,7 +289,30 @@ class ChangelogBehavior extends Behavior
             }
         }
 
+        $indexedByColumn = array_diff_key($indexedByColumn, array_flip($removeKeys));
+
         return array_values($indexedByColumn);
+    }
+
+    protected function _normalizeCombinationSettings($settings)
+    {
+        if (!is_array($settings)) {
+            throw new UnexpectedValueException(__d('changelog', 'Changelog: `combinations` option should be array'));
+        }
+
+        /**
+         * If numric keys e.g. ['first_name', 'last_name'] given, Handles it
+         * as a list of columns.
+         */
+        if (Hash::numeric(array_keys($settings))) {
+            $settings = ['columns' => $settings];
+        }
+
+        if (!isset($settings['columns']) || !is_array($settings['columns'])) {
+            throw new UnexpectedValueException(__d('changelog', 'Changelog: `combinations` option should have `columns` key and value as array of columns'));
+        }
+
+        return $settings;
     }
 
     public function collectChangelogBeforeValues($entity)
@@ -532,7 +565,7 @@ class ChangelogBehavior extends Behavior
 
         $isMany = in_array($association->type(), [Association::MANY_TO_MANY, Association::ONE_TO_MANY]);
         $property = $association->property();
-        $beforeValues = Hash::get($this->_collectedBeforeValues, $property);
+        $beforeValue = Hash::get($this->_collectedBeforeValues, $property);
 
         /**
          * Call actual converter. callable can be set with `convertAssociations`
@@ -540,7 +573,7 @@ class ChangelogBehavior extends Behavior
          */
         $converter = $this->config('convertAssociations');
         $callable = is_callable($converter) ? $converter : [$this, 'defaultConvertAssociation'];
-        $arguments = [$property, $value, $kind, $association, $isMany, $beforeValues];
+        $arguments = [$property, $value, $kind, $association, $isMany, $beforeValue];
 
         return call_user_func_array($callable, $arguments);
     }
@@ -553,19 +586,24 @@ class ChangelogBehavior extends Behavior
      * @param string $kind either 'before'/'after'
      * @param \Cake\ORM\Association $association association object for the value
      * @param boolean $isMany true => [hasMany, belongsToMany] false => [hasOne, belongsTo]
-     * @param array $beforeValues association original values. indexed by association properties.
+     * @param array $beforeValue association original values. indexed by association properties.
      * @return mixed converted value
      */
-    public function defaultConvertAssociation($property, $value, $kind, $association, $isMany, $beforeValues)
+    public function defaultConvertAssociation($property, $value, $kind, $association, $isMany, $beforeValue)
     {
         $displayField = $association->displayField();
-        if ($kind === 'before' && !$beforeValues || !$value) {
+        if ($kind === 'before' && !$beforeValue) {
+            if ($value)
+            return null;
+        }
+
+        if (!$value) {
             return null;
         }
 
         // hasMany, belongsToMany
         if ($isMany) {
-            $values = $kind === 'before' ? $beforeValues : (array)$value;
+            $values = $kind === 'before' ? $beforeValue : (array)$value;
             return implode(', ', collection($values)->extract($displayField)
                 ->filter()
                 ->toArray());
@@ -576,7 +614,11 @@ class ChangelogBehavior extends Behavior
             }
 
             if ($kind === 'before') {
-                return Hash::get($beforeValues, $displayField);
+                if ($beforeValue instanceof EntityInterface) {
+                    return $beforeValue->get($displayField);
+                }
+
+                return Hash::get($beforeValue, $displayField);
             } else {
                 return $value->get($displayField);
             }

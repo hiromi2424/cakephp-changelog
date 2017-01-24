@@ -462,20 +462,19 @@ class ChangelogBehaviorTest extends TestCase
 
     /**
      * Test saveChangelog() method
-     * If Association field
+     * Association value(s) should be converted even if association field was not changed
      *
      * @test
      */
     public function saveChangelogCombinationsWithAssociations()
     {
         $this->Articles->behaviors()->get('Changelog')->config('combinations', [
-            'publish_at_title' => ['publish_at', 'title'],
+            'slug' => ['user_id', 'title'],
         ]);
-        // articles->id = 1 has all association data.
-        $article = $this->Articles->get(1);
+        // articles->id = 3 has user data saved.
+        $article = $this->Articles->get(3);
         // modify all associations
         $article = $this->Articles->patchEntity($article, [
-            'publish_at' => '2017/01/14 00:00',
             'title' => 'changed title',
         ]);
 
@@ -487,7 +486,7 @@ class ChangelogBehaviorTest extends TestCase
         $changelog = $this->Changelogs->find()
             ->where([
                 'model' => 'Articles',
-                'foreign_key' => 1
+                'foreign_key' => 3
             ])
             ->first();
         $this->assertNotEmpty($changelog);
@@ -496,12 +495,12 @@ class ChangelogBehaviorTest extends TestCase
         $combinedChange = $this->ChangelogColumns->find()
             ->where([
                 'ChangelogColumns.changelog_id' => $changelog->id,
-                'ChangelogColumns.column' => 'publish_at_title',
+                'ChangelogColumns.column' => 'slug',
             ])
             ->first();
         $this->assertNotEmpty($combinedChange);
-        $this->assertSame('First Article', $combinedChange->before);
-        $this->assertSame('1/14/17, 12:00 AM changed title', $combinedChange->after);
+        $this->assertSame('mariano Third Article', $combinedChange->before);
+        $this->assertSame('mariano changed title', $combinedChange->after);
     }
 
 }
