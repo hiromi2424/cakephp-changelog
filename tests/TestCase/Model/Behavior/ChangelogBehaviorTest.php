@@ -8,6 +8,7 @@ use Cake\ORM\Table;
 use Cake\ORM\TableRegistry;
 use Cake\TestSuite\TestCase;
 use Cake\Utility\Inflector;
+use Cake\Utility\Text;
 use Exception;
 
 use Changelog\Model\Behavior\ChangelogBehavior;
@@ -52,12 +53,14 @@ class ArticlesTable extends Table
 
     public function convertAssociations($property, $value, $kind, $association, $isMany, $beforeValues)
     {
-        if ($property === 'comment') {
+        if ($property === 'comments') {
             $values = $kind === 'before' ? $beforeValues : $value;
-            return collection($values)->extract('body')
+            return implode(', ', collection($values)->extract('body')
+                ->filter()
                 ->map(function ($body) {
-                    Text::truncate($body, 5);
-                });
+                    return Text::truncate($body, 10);
+                })
+                ->toArray());
         }
 
         return $this->defaultConvertAssociation($property, $value, $kind, $association, $isMany, $beforeValues);
@@ -320,13 +323,14 @@ class ChangelogBehaviorTest extends TestCase
     public function saveChangelogAssociation()
     {
         // articles->id = 1 has all association data
+        $assocs = [
+            'Users',
+            'EyeCatchImages',
+            'Comments',
+            'Tags',
+        ];
         $article = $this->Articles->get(1, [
-            'contain' => [
-                'Users',
-                'EyeCatchImages',
-                'Comments',
-                'Tags',
-            ],
+            'contain' => $assocs,
         ]);
         // modify all associations
         $article = $this->Articles->patchEntity($article, [
@@ -352,7 +356,7 @@ class ChangelogBehaviorTest extends TestCase
         $article->dirty('tags', true);
 
         // do save actually
-        $result = $this->Articles->save($article);
+        $result = $this->Articles->save($article, ['associated' => $assocs]);
         $this->assertNotEmpty($result);
 
         // find parent table changelogs record
@@ -393,11 +397,21 @@ class ChangelogBehaviorTest extends TestCase
             ])
             ->first();
         $this->assertNotEmpty($commentsChange);
-        $this->assertSame('2', $commentsChange->after);
-
-        // but Comments table is associated with hasMany
+        // Comments table is associated with hasMany
         // that defaults 'append' save strategy.
-        // this is
+        // so that added entity will be changed value.
+        // TODO: consider this
+        $this->assertSame('First C...', $commentsChange->before);
+        $this->assertSame('Second ...', $commentsChange->after);
+
+        // find record for belongsTo association
+        $tagsChange = $this->ChangelogColumns->find()
+            ->where([
+                'ChangelogColumns.changelog_id' => $changelog->id,
+                'ChangelogColumns.column' => 'tags',
+            ])
+            ->first();
+        $this->assertNotEmpty($tagsChange);
     }
 
     /**

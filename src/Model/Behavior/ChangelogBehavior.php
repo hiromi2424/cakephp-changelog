@@ -533,8 +533,6 @@ class ChangelogBehavior extends Behavior
             return null;
         }
 
-
-
         // hasMany, belongsToMany
         if ($isMany) {
             $values = $kind === 'before' ? $beforeValues : (array)$value;
