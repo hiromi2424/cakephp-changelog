@@ -96,7 +96,7 @@ class ChangelogBehavior extends Behavior
         }
     }
 
-    public function collectChanges(EntityInterface $entity, ArrayObject $options)
+    public function collectChanges(EntityInterface $entity, ArrayObject $options = null)
     {
         /**
          * Custom before values can be set via save options.
@@ -222,66 +222,64 @@ class ChangelogBehavior extends Behavior
         }
 
         /**
-         * Be sure whether change was done or not
-         */
-        if (!$this->config('logEmptyChanges') && empty($changes)) {
-            return false;
-        }
-
-        /**
          * Make combinations
          */
         if ($combinations = $this->config('combinations')) {
-            $indexedByColumn = collection($changes)->indexBy('column')->toArray();
-            foreach ($combinations as $name => $settings) {
-                if (!is_array($settings)) {
-                    throw new UnexpectedValueException(__d('changelog', 'Changelog: `combinations` option should be array'));
-                }
-
-                /**
-                 * If numric keys e.g. ['first_name', 'last_name'] given, Handles it
-                 * as a list of columns.
-                 */
-                if (Hash::numeric(array_keys($settings))) {
-                    $settings = ['columns' => $settings];
-                }
-
-                if (!isset($settings['columns']) || !is_array($settings['columns'])) {
-                    throw new UnexpectedValueException(__d('changelog', 'Changelog: `combinations` option should have `columns` key and value as array of columns'));
-                }
-
-                $values = [];
-                foreach ($settings['columns'] as $column) {
-                    if (!isset($indexedByColumn[$column])) {
-                        $values['before'][$column] = $entity->get($column);
-                        $values['after'][$column] = $entity->get($column);
-                    } else {
-                        $values['before'][$column] = $indexedByColumn[$column]['before'];
-                        $values['after'][$column] = $indexedByColumn[$column]['after'];
-                    }
-                }
-
-                $indexedByColumn = array_diff_key($indexedByColumn, array_flip($settings['columns']));
-                if ($values['before'] == $values['after']) {
-                    continue;
-                }
-
-                if (isset($settings['convert'])) {
-                    $convert = $settings['convert'];
-                    $indexedByColumn[$name] = $convert($name, $values['before'], $values['after']);
-                } else {
-                    $indexedByColumn[$name] = [
-                        'column' => $name,
-                        'before' => implode(' ', array_filter($values['before'])),
-                        'after' => implode(' ', array_filter($values['after'])),
-                    ];
-                }
-            }
-
-            $changes = array_values($indexedByColumn);
+            $changes = $this->makeChangelogCombinations($changes, $combinations);
         }
 
         return $this->_changes = $changes;
+    }
+
+    public function makeChangelogCombinations(array $changes, array $combinations)
+    {
+        $indexedByColumn = collection($changes)->indexBy('column')->toArray();
+        foreach ($combinations as $name => $settings) {
+            if (!is_array($settings)) {
+                throw new UnexpectedValueException(__d('changelog', 'Changelog: `combinations` option should be array'));
+            }
+
+            /**
+             * If numric keys e.g. ['first_name', 'last_name'] given, Handles it
+             * as a list of columns.
+             */
+            if (Hash::numeric(array_keys($settings))) {
+                $settings = ['columns' => $settings];
+            }
+
+            if (!isset($settings['columns']) || !is_array($settings['columns'])) {
+                throw new UnexpectedValueException(__d('changelog', 'Changelog: `combinations` option should have `columns` key and value as array of columns'));
+            }
+
+            $values = [];
+            foreach ($settings['columns'] as $column) {
+                if (!isset($indexedByColumn[$column])) {
+                    $values['before'][$column] = $entity->get($column);
+                    $values['after'][$column] = $entity->get($column);
+                } else {
+                    $values['before'][$column] = $indexedByColumn[$column]['before'];
+                    $values['after'][$column] = $indexedByColumn[$column]['after'];
+                }
+            }
+
+            $indexedByColumn = array_diff_key($indexedByColumn, array_flip($settings['columns']));
+            if ($values['before'] == $values['after']) {
+                continue;
+            }
+
+            if (isset($settings['convert'])) {
+                $convert = $settings['convert'];
+                $indexedByColumn[$name] = $convert($name, $values['before'], $values['after']);
+            } else {
+                $indexedByColumn[$name] = [
+                    'column' => $name,
+                    'before' => implode(' ', array_filter($values['before'])),
+                    'after' => implode(' ', array_filter($values['after'])),
+                ];
+            }
+        }
+
+        return array_values($indexedByColumn);
     }
 
     public function collectChangelogBeforeValues($entity)
@@ -335,6 +333,13 @@ class ChangelogBehavior extends Behavior
      */
     public function saveChangelog(EntityInterface $entity, $changes = [])
     {
+        /**
+         * Be sure whether change was done or not
+         */
+        if (!$this->config('logEmptyChanges') && empty($changes)) {
+            return false;
+        }
+
         /**
          * Saves actually
          */

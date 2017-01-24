@@ -212,7 +212,7 @@ class ChangelogBehaviorTest extends TestCase
             'title' => 'Changed title',
             'body' => 'Changed body'
         ]);
-        $result = $this->Articles->saveChangelog($article);
+        $result = $this->Articles->saveChangelog($article, $this->Articles->collectChanges($article));
         $this->assertNotEmpty($result);
 
         // find parent table changelogs record
@@ -267,7 +267,7 @@ class ChangelogBehaviorTest extends TestCase
             'title' => 'Changed title',
             'body' => ''
         ]);
-        $result = $this->Articles->saveChangelog($article);
+        $result = $this->Articles->saveChangelog($article, $this->Articles->collectChanges($article));
         $this->assertNotEmpty($result);
 
         // find parent table changelogs record
@@ -310,7 +310,7 @@ class ChangelogBehaviorTest extends TestCase
         $article = $this->Articles->patchEntity($article, [
             'publish_at' => '2017/01/14 00:00'
         ]);
-        $result = $this->Articles->saveChangelog($article);
+        $result = $this->Articles->saveChangelog($article, $this->Articles->collectChanges($article));
         $this->assertEmpty($result);
     }
 
@@ -412,15 +412,61 @@ class ChangelogBehaviorTest extends TestCase
             ])
             ->first();
         $this->assertNotEmpty($tagsChange);
+        $this->assertsame('One', $tagsChange->before);
+        $this->assertsame('One, Two', $tagsChange->after);
     }
 
     /**
      * Test saveChangelog() method
-     * Associations should be converted to display field.
+     * Combination works expectedly.
      *
      * @test
      */
     public function saveChangelogCombinations()
+    {
+        $this->Articles->behaviors()->get('Changelog')->config('combinations', [
+            'publish_at_title' => ['publish_at', 'title'],
+        ]);
+        // articles->id = 1 has all association data.
+        $article = $this->Articles->get(1);
+        // modify all associations
+        $article = $this->Articles->patchEntity($article, [
+            'publish_at' => '2017/01/14 00:00',
+            'title' => 'changed title',
+        ]);
+
+        // do save actually
+        $result = $this->Articles->save($article);
+        $this->assertNotEmpty($result);
+
+        // find parent table changelogs record
+        $changelog = $this->Changelogs->find()
+            ->where([
+                'model' => 'Articles',
+                'foreign_key' => 1
+            ])
+            ->first();
+        $this->assertNotEmpty($changelog);
+
+        // find combined column
+        $combinedChange = $this->ChangelogColumns->find()
+            ->where([
+                'ChangelogColumns.changelog_id' => $changelog->id,
+                'ChangelogColumns.column' => 'publish_at_title',
+            ])
+            ->first();
+        $this->assertNotEmpty($combinedChange);
+        $this->assertSame('First Article', $combinedChange->before);
+        $this->assertSame('1/14/17, 12:00 AM changed title', $combinedChange->after);
+    }
+
+    /**
+     * Test saveChangelog() method
+     * If Association field
+     *
+     * @test
+     */
+    public function saveChangelogCombinationsWithAssociations()
     {
         $this->Articles->behaviors()->get('Changelog')->config('combinations', [
             'publish_at_title' => ['publish_at', 'title'],
