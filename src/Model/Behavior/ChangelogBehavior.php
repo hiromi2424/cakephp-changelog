@@ -37,6 +37,7 @@ class ChangelogBehavior extends Behavior
         'autoSave' => true,
         'changelogTable' => 'Changelog.Changelogs',
         'columnTable' => 'Changelog.ChangelogColumns',
+        'collectChangeOnBeforeSave' => true,
         'combinations' => [],
         'convertAssociations' => true,
         'convertForeignKeys' => true,
@@ -49,13 +50,25 @@ class ChangelogBehavior extends Behavior
             'created',
             'modified'
         ],
-        'locator' => null,
         'logIsNew' => false,
         'logEmptyChanges' => false,
-        'onAfterSave' => true
+        'saveChangelogOnAfterSave' => true,
+        'tableLocator' => null
     ];
 
+    /**
+     * Default config
+     *
+     * @var array
+     */
     protected $_collectedBeforeValues = null;
+
+    /**
+     * Holds changes to save
+     *
+     * @var array
+     */
+    protected $_changes = [];
 
     /**
      * Initialize tableLocator also.
@@ -78,65 +91,20 @@ class ChangelogBehavior extends Behavior
      */
     public function beforeSave(Event $event, EntityInterface $entity, ArrayObject $options)
     {
-        $this->collectChangelogBeforeValues($entity);
-    }
-
-    public function collectChangelogBeforeValues($entity)
-    {
-        $this->_collectedBeforeValues = [];
-        $associations = $this->_associationsIndexedByProperty();
-        foreach ($entity->getOriginalValues() as $key => $value) {
-            if (isset($associations[$key])) {
-                $association = $associations[$key];
-                if (in_array($association->type(), [Association::MANY_TO_MANY, Association::ONE_TO_MANY])) {
-                    $values = (array)$value;
-                    foreach ($values as $i => $v) {
-                        if ($v instanceof EntityInterface) {
-                            $values[$i] = $v->getOriginalValues();
-                        } else {
-                            $values[$i] = $v;
-                        }
-                    }
-                    $this->_collectedBeforeValues[$key] = $values;
-                } else {
-                    if ($value instanceof EntityInterface) {
-                        $this->_collectedBeforeValues[$key] = $value->getOriginalValues();
-                    } else {
-                        $this->_collectedBeforeValues[$key] = $value;
-                    }
-                }
-            }
-        }
-
-        return $this->_collectedBeforeValues;
-    }
-
-    /**
-     * afterSave callback.
-     * This logs entities when `onAfterSave` option was turned on.
-     *
-     * {@inheritdoc}
-     */
-    public function afterSave(Event $event, EntityInterface $entity, ArrayObject $options)
-    {
-        if ($this->config('onAfterSave')) {
-            $this->saveChangelog($entity, $options);
+        if ($this->config('collectChangeOnBeforeSave')) {
+            $this->collectChanges($entity, $options);
         }
     }
 
-    /**
-     * Saves changelogs for entity.
-     *
-     * @param \Cake\Datasource\EntityInterface $entity The entity object to log changes.
-     * @return \Cake\Datasource\EntityInterface|bool Entity object when logged otherwise `false`.
-     */
-    public function saveChangelog(EntityInterface $entity, $options = [])
+    public function collectChanges(EntityInterface $entity, ArrayObject $options)
     {
         /**
          * Custom before values can be set via save options.
          */
         if ($options && isset($options['collectedBeforeValues'])) {
             $this->_collectedBeforeValues = $options['collectedBeforeValues'];
+        } else {
+            $this->collectChangelogBeforeValues($entity);
         }
 
         $Changelogs = $this->getChangelogTable();
@@ -309,15 +277,70 @@ class ChangelogBehavior extends Behavior
                     ];
                 }
             }
+
             $changes = array_values($indexedByColumn);
         }
 
+        return $this->_changes = $changes;
+    }
+
+    public function collectChangelogBeforeValues($entity)
+    {
+        $this->_collectedBeforeValues = [];
+        $associations = $this->_associationsIndexedByProperty();
+        foreach ($entity->getOriginalValues() as $key => $value) {
+            if (isset($associations[$key])) {
+                $association = $associations[$key];
+                if (in_array($association->type(), [Association::MANY_TO_MANY, Association::ONE_TO_MANY])) {
+                    $values = (array)$value;
+                    foreach ($values as $i => $v) {
+                        if ($v instanceof EntityInterface) {
+                            $values[$i] = $v->getOriginalValues();
+                        } else {
+                            $values[$i] = $v;
+                        }
+                    }
+                    $this->_collectedBeforeValues[$key] = $values;
+                } else {
+                    if ($value instanceof EntityInterface) {
+                        $this->_collectedBeforeValues[$key] = $value->getOriginalValues();
+                    } else {
+                        $this->_collectedBeforeValues[$key] = $value;
+                    }
+                }
+            }
+        }
+
+        return $this->_collectedBeforeValues;
+    }
+
+    /**
+     * afterSave callback.
+     * This logs entities when `onAfterSave` option was turned on.
+     *
+     * {@inheritdoc}
+     */
+    public function afterSave(Event $event, EntityInterface $entity, ArrayObject $options)
+    {
+        if ($this->config('saveChangelogOnAfterSave')) {
+            $this->saveChangelog($entity, $this->_changes);
+        }
+    }
+
+    /**
+     * Saves changelogs for entity.
+     *
+     * @param \Cake\Datasource\EntityInterface $entity The entity object to log changes.
+     * @return \Cake\Datasource\EntityInterface|bool Entity object when logged otherwise `false`.
+     */
+    public function saveChangelog(EntityInterface $entity, $changes = [])
+    {
         /**
          * Saves actually
          */
         $data = new ArrayObject([
-            'model' => $table->alias(),
-            'foreign_key' => $entity->get($table->primaryKey()),
+            'model' => $this->_table->alias(),
+            'foreign_key' => $entity->get($this->_table->primaryKey()),
             'is_new' => $entity->isNew(),
             'changelog_columns' => $changes,
         ]);
@@ -325,7 +348,9 @@ class ChangelogBehavior extends Behavior
             'associated' => 'ChangelogColumns',
             'atomic' => false
         ]);
-        return $table->dispatchEvent('Changelog.saveChangelogRecords', compact('Changelogs', 'data', 'options'))->result;
+
+        $Changelogs = $this->getChangelogTable();
+        return $this->_table->dispatchEvent('Changelog.saveChangelogRecords', compact('Changelogs', 'data', 'options'))->result;
     }
 
     /**
