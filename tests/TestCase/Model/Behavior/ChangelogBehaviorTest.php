@@ -503,4 +503,47 @@ class ChangelogBehaviorTest extends TestCase
         $this->assertSame('mariano changed title', $combinedChange->after);
     }
 
+    /**
+     * Test saveChangelog() method
+     * Association value(s) should be converted even if association field was *changed
+     *
+     * @test
+     */
+    public function saveChangelogCombinationsWithAssociationsChanged()
+    {
+        $this->Articles->behaviors()->get('Changelog')->config('combinations', [
+            'slug' => ['user_id', 'title'],
+        ]);
+        // articles->id = 3 has user data saved.
+        $article = $this->Articles->get(3);
+        // modify all associations
+        $article = $this->Articles->patchEntity($article, [
+            'user_id' => 2,
+        ]);
+
+        // do save actually
+        $result = $this->Articles->save($article);
+        $this->assertNotEmpty($result);
+
+        // find parent table changelogs record
+        $changelog = $this->Changelogs->find()
+            ->where([
+                'model' => 'Articles',
+                'foreign_key' => 3
+            ])
+            ->first();
+        $this->assertNotEmpty($changelog);
+
+        // find combined column
+        $combinedChange = $this->ChangelogColumns->find()
+            ->where([
+                'ChangelogColumns.changelog_id' => $changelog->id,
+                'ChangelogColumns.column' => 'slug',
+            ])
+            ->first();
+        $this->assertNotEmpty($combinedChange);
+        $this->assertSame('mariano Third Article', $combinedChange->before);
+        $this->assertSame('nate Third Article', $combinedChange->after);
+    }
+
 }

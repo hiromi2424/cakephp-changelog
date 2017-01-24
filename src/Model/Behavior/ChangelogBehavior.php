@@ -271,10 +271,24 @@ class ChangelogBehavior extends Behavior
                      */
                     if (isset($foreignKeys[$column])) {
                         $association = $foreignKeys[$column];
-                        $column = $association->property();
-                        $values['before'][$column] = $indexedByColumn[$column]['after'];
-                        $values['after'][$column] = $indexedByColumn[$column]['after'];
+                        $property = $association->property();
+                        if (isset($indexedByColumn[$property]['after'])) {
+                            if (isset($indexedByColumn[$property]['before'])) {
+                                $values['before'][$column] = $indexedByColumn[$property]['before'];
+                            } else {
+                                $values['before'][$column] = $indexedByColumn[$property]['after'];
+                            }
+                            $values['after'][$column] = $indexedByColumn[$property]['after'];
+                        } else {
+                            if (isset($indexedByColumn[$column]['before'])) {
+                                $values['before'][$column] = $indexedByColumn[$column]['before'];
+                            } else {
+                                $values['before'][$column] = $indexedByColumn[$column]['after'];
+                            }
+                            $values['after'][$column] = $indexedByColumn[$column]['after'];
+                        }
                         $removeKeys[] = $column;
+                        $removeKeys[] = $property;
                     } else {
                         $values['before'][$column] = $entity->get($column);
                         $values['after'][$column] = $entity->get($column);
@@ -284,8 +298,24 @@ class ChangelogBehavior extends Behavior
                      * convert foreign keys
                      */
                     if (isset($foreignKeys[$column])) {
-                        $values['before'][$column] = $indexedByColumn[$column]['after'];
-                        $values['after'][$column] = $indexedByColumn[$column]['after'];
+                        $association = $foreignKeys[$column];
+                        $property = $association->property();
+                        if (isset($indexedByColumn[$property]['after'])) {
+                            if (isset($indexedByColumn[$property]['before'])) {
+                                $values['before'][$column] = $indexedByColumn[$property]['before'];
+                            } else {
+                                $values['before'][$column] = $indexedByColumn[$property]['after'];
+                            }
+                            $values['after'][$column] = $indexedByColumn[$property]['after'];
+                            $removeKeys[] = $property;
+                        } else {
+                            if (isset($indexedByColumn[$column]['before'])) {
+                                $values['before'][$column] = $indexedByColumn[$column]['before'];
+                            } else {
+                                $values['before'][$column] = $indexedByColumn[$column]['after'];
+                            }
+                            $values['after'][$column] = $indexedByColumn[$column]['after'];
+                        }
                     } else {
                         $values['before'][$column] = $indexedByColumn[$column]['before'];
                         $values['after'][$column] = $indexedByColumn[$column]['after'];
@@ -293,20 +323,21 @@ class ChangelogBehavior extends Behavior
                 }
             }
 
-            if ($values['before'] == $values['after']) {
-                continue;
-            }
-
             if (isset($settings['convert'])) {
                 $convert = $settings['convert'];
-                $indexedByColumn[$name] = $convert($name, $values['before'], $values['after']);
+                $converted = $convert($name, $values['before'], $values['after']);
             } else {
-                $indexedByColumn[$name] = [
+                $converted = [
                     'column' => $name,
                     'before' => implode(' ', array_filter($values['before'])),
                     'after' => implode(' ', array_filter($values['after'])),
                 ];
             }
+
+            if ($converted['before'] == $converted['after']) {
+                continue;
+            }
+            $indexedByColumn[$name] = $converted;
         }
 
         $removeKeys = array_diff($removeKeys, array_keys($combinations));
