@@ -334,7 +334,12 @@ class ChangelogBehavior extends Behavior
                 ];
             }
 
+            /**
+             * Filters converted value not equal to. also remove keys from indexedColumn
+             * to prevent changes remaining.
+             */
             if ($converted['before'] == $converted['after']) {
+                unset($combinations[$name]);
                 continue;
             }
             $indexedByColumn[$name] = $converted;
