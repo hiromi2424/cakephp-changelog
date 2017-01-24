@@ -57,7 +57,7 @@ class ChangelogBehavior extends Behavior
     ];
 
     /**
-     * Default config
+     * Holds collected before values
      *
      * @var array
      */
@@ -69,6 +69,13 @@ class ChangelogBehavior extends Behavior
      * @var array
      */
     protected $_changes = [];
+
+    /**
+     * olds combination columns
+     *
+     * @var array
+     */
+    protected $_combinationColumns = [];
 
     /**
      * Initialize tableLocator also.
@@ -133,12 +140,15 @@ class ChangelogBehavior extends Behavior
         /**
          * Adds extra columns when combinations was given.
          */
+        $this->_combinationColumns = [];
         if ($combinations = $this->config('combinations')) {
             foreach ($combinations as $name => $settings) {
                 $settings = $this->_normalizeCombinationSettings($settings);
-                $columns = array_merge($columns, $settings['columns']);
+                $this->_combinationColumns = array_merge($this->_combinationColumns, $settings['columns']);
             }
-            $columns = array_values(array_unique($columns));
+            $this->_combinationColumns = array_values(array_unique($this->_combinationColumns));
+
+            $columns = array_values(array_unique(array_merge($columns, $this->_combinationColumns)));
             $afterValues = $entity->extract($columns);
         }
 
@@ -211,26 +221,27 @@ class ChangelogBehavior extends Behavior
              * Dispatches convert event
              */
             $event = $table->dispatchEvent('Changelog.convertValues', [$eventData]);
+            extract((array)$eventData);
 
-            /**
-             * Dispatches filter event
-             */
-            $event = $table->dispatchEvent('Changelog.filterChanges', [$eventData]);
-            if (!$event->result) {
-                continue;
+            if (!$this->_combinationColumns || !in_array($column, $this->_combinationColumns)) {
+                /**
+                 * Dispatches filter event
+                 */
+                $event = $table->dispatchEvent('Changelog.filterChanges', [$eventData]);
+                if (!$event->result) {
+                    continue;
+                }
             }
 
             /**
              * Determine changes from result
              */
             extract((array)$eventData);
-            if ($event->result) {
-                $changes[] = [
-                    'column' => $column,
-                    'before' => $before,
-                    'after' => $after,
-                ];
-            }
+            $changes[] = [
+                'column' => $column,
+                'before' => $before,
+                'after' => $after,
+            ];
         }
 
         /**
@@ -532,6 +543,7 @@ class ChangelogBehavior extends Behavior
                 unset($data['afterValues'][$column]);
                 $column = $association->property();
                 $data['column'] = $column;
+                $this->_combinationColumns[] = $column;
             }
 
             $before = $association->findById($before)->first();
