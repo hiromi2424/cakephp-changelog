@@ -51,11 +51,10 @@ class ArticlesTable extends Table
         ]);
     }
 
-    public function convertAssociations($property, $value, $kind, $association, $isMany, $beforeValues)
+    public function convertAssociations($property, $value, $kind, $association, $isMany)
     {
         if ($property === 'comments') {
-            $values = $kind === 'before' ? $beforeValues : $value;
-            return implode(', ', collection($values)->extract('body')
+            return implode(', ', collection($value)->extract('body')
                 ->filter()
                 ->map(function ($body) {
                     return Text::truncate($body, 10);
@@ -63,7 +62,7 @@ class ArticlesTable extends Table
                 ->toArray());
         }
 
-        return $this->defaultConvertAssociation($property, $value, $kind, $association, $isMany, $beforeValues);
+        return $this->defaultConvertAssociation($property, $value, $kind, $association, $isMany);
     }
 
 }

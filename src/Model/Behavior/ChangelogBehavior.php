@@ -37,7 +37,7 @@ class ChangelogBehavior extends Behavior
         'autoSave' => true,
         'changelogTable' => 'Changelog.Changelogs',
         'columnTable' => 'Changelog.ChangelogColumns',
-        'collectChangeOnBeforeSave' => true,
+        'collectChangesOnBeforeSave' => true,
         'combinations' => [],
         'convertAssociations' => true,
         'convertForeignKeys' => true,
@@ -98,22 +98,13 @@ class ChangelogBehavior extends Behavior
      */
     public function beforeSave(Event $event, EntityInterface $entity, ArrayObject $options)
     {
-        if ($this->config('collectChangeOnBeforeSave')) {
+        if ($this->config('collectChangesOnBeforeSave')) {
             $this->collectChanges($entity, $options);
         }
     }
 
     public function collectChanges(EntityInterface $entity, ArrayObject $options = null)
     {
-        /**
-         * Custom before values can be set via save options.
-         */
-        if ($options && isset($options['collectedBeforeValues'])) {
-            $this->_collectedBeforeValues = $options['collectedBeforeValues'];
-        } else {
-            $this->collectChangelogBeforeValues($entity);
-        }
-
         $Changelogs = $this->getChangelogTable();
         $Columns = $this->getColumnTable();
         $table = $this->_table;
@@ -265,61 +256,26 @@ class ChangelogBehavior extends Behavior
             $values = [];
             foreach ($settings['columns'] as $column) {
                 $removeKeys[] = $column;
-                if (!isset($indexedByColumn[$column])) {
-                    /**
-                     * convert foreign keys
-                     */
-                    if (isset($foreignKeys[$column])) {
-                        $association = $foreignKeys[$column];
-                        $property = $association->property();
-                        if (isset($indexedByColumn[$property]['after'])) {
-                            if (isset($indexedByColumn[$property]['before'])) {
-                                $values['before'][$column] = $indexedByColumn[$property]['before'];
-                            } else {
-                                $values['before'][$column] = $indexedByColumn[$property]['after'];
-                            }
-                            $values['after'][$column] = $indexedByColumn[$property]['after'];
-                        } else {
-                            if (isset($indexedByColumn[$column]['before'])) {
-                                $values['before'][$column] = $indexedByColumn[$column]['before'];
-                            } else {
-                                $values['before'][$column] = $indexedByColumn[$column]['after'];
-                            }
-                            $values['after'][$column] = $indexedByColumn[$column]['after'];
-                        }
-                        $removeKeys[] = $column;
+
+                if ($association = Hash::get($foreignKeys, $column)) {
+                    $property = $association->property();
+                    if (isset($indexedByColumn[$property])) {
+                        $values['before'][$column] = $indexedByColumn[$property]['before'];
+                        $values['after'][$column] = $indexedByColumn[$property]['after'];
                         $removeKeys[] = $property;
+                    } elseif (isset($indexedByColumn[$column])) {
+                        $values['before'][$column] = $indexedByColumn[$column]['before'];
+                        $values['after'][$column] = $indexedByColumn[$column]['after'];
                     } else {
                         $values['before'][$column] = $entity->get($column);
                         $values['after'][$column] = $entity->get($column);
                     }
+                } elseif (isset($indexedByColumn[$column])) {
+                    $values['before'][$column] = $indexedByColumn[$column]['before'];
+                    $values['after'][$column] = $indexedByColumn[$column]['after'];
                 } else {
-                    /**
-                     * convert foreign keys
-                     */
-                    if (isset($foreignKeys[$column])) {
-                        $association = $foreignKeys[$column];
-                        $property = $association->property();
-                        if (isset($indexedByColumn[$property]['after'])) {
-                            if (isset($indexedByColumn[$property]['before'])) {
-                                $values['before'][$column] = $indexedByColumn[$property]['before'];
-                            } else {
-                                $values['before'][$column] = $indexedByColumn[$property]['after'];
-                            }
-                            $values['after'][$column] = $indexedByColumn[$property]['after'];
-                            $removeKeys[] = $property;
-                        } else {
-                            if (isset($indexedByColumn[$column]['before'])) {
-                                $values['before'][$column] = $indexedByColumn[$column]['before'];
-                            } else {
-                                $values['before'][$column] = $indexedByColumn[$column]['after'];
-                            }
-                            $values['after'][$column] = $indexedByColumn[$column]['after'];
-                        }
-                    } else {
-                        $values['before'][$column] = $indexedByColumn[$column]['before'];
-                        $values['after'][$column] = $indexedByColumn[$column]['after'];
-                    }
+                    $values['before'][$column] = $entity->get($column);
+                    $values['after'][$column] = $entity->get($column);
                 }
             }
 
@@ -369,36 +325,6 @@ class ChangelogBehavior extends Behavior
         }
 
         return $settings;
-    }
-
-    public function collectChangelogBeforeValues($entity)
-    {
-        $this->_collectedBeforeValues = [];
-        $associations = $this->_associationsIndexedByProperty();
-        foreach ($entity->getOriginalValues() as $key => $value) {
-            if (isset($associations[$key])) {
-                $association = $associations[$key];
-                if (in_array($association->type(), [Association::MANY_TO_MANY, Association::ONE_TO_MANY])) {
-                    $values = (array)$value;
-                    foreach ($values as $i => $v) {
-                        if ($v instanceof EntityInterface) {
-                            $values[$i] = $v->getOriginalValues();
-                        } else {
-                            $values[$i] = $v;
-                        }
-                    }
-                    $this->_collectedBeforeValues[$key] = $values;
-                } else {
-                    if ($value instanceof EntityInterface) {
-                        $this->_collectedBeforeValues[$key] = $value->getOriginalValues();
-                    } else {
-                        $this->_collectedBeforeValues[$key] = $value;
-                    }
-                }
-            }
-        }
-
-        return $this->_collectedBeforeValues;
     }
 
     /**
@@ -582,9 +508,7 @@ class ChangelogBehavior extends Behavior
                 $this->_combinationColumns[] = $column;
             }
 
-            $before = $association->findById($before)->first();
-            // belongsTo association requires beforeValue to convert
-            $this->_collectedBeforeValues[$association->property()] = $before ? $before->toArray() : [];
+            $before = $association->findById($before)->first(); 
             $after = $association->findById($after)->first();
             $before = $this->convertAssociationChangeValue($before, $association, 'before');
             $after = $this->convertAssociationChangeValue($after, $association, 'after');
@@ -624,7 +548,6 @@ class ChangelogBehavior extends Behavior
 
         $isMany = in_array($association->type(), [Association::MANY_TO_MANY, Association::ONE_TO_MANY]);
         $property = $association->property();
-        $beforeValue = Hash::get($this->_collectedBeforeValues, $property);
 
         /**
          * Call actual converter. callable can be set with `convertAssociations`
@@ -632,7 +555,7 @@ class ChangelogBehavior extends Behavior
          */
         $converter = $this->config('convertAssociations');
         $callable = is_callable($converter) ? $converter : [$this, 'defaultConvertAssociation'];
-        $arguments = [$property, $value, $kind, $association, $isMany, $beforeValue];
+        $arguments = [$property, $value, $kind, $association, $isMany];
 
         return call_user_func_array($callable, $arguments);
     }
@@ -648,35 +571,30 @@ class ChangelogBehavior extends Behavior
      * @param array $beforeValue association original values. indexed by association properties.
      * @return mixed converted value
      */
-    public function defaultConvertAssociation($property, $value, $kind, $association, $isMany, $beforeValue)
+    public function defaultConvertAssociation($property, $value, $kind, $association, $isMany)
     {
-        $displayField = $association->displayField();
-        if ($kind === 'before' && !$beforeValue) {
-            return null;
-        }
-
         if (!$value) {
             return null;
         }
+        $displayField = $association->displayField();
 
         // hasMany, belongsToMany
         if ($isMany) {
-            $values = $kind === 'before' ? $beforeValue : (array)$value;
-            return implode(', ', collection($values)->extract($displayField)
+            $values = (array)$value;
+            return implode(', ', collection($values)
+                ->sortBy($displayField, SORT_ASC, SORT_NATURAL)
+                ->extract($displayField)
                 ->filter()
                 ->toArray());
         // hasOne, belongsTo
         } else {
-            if ($kind === 'before') {
-                if ($beforeValue instanceof EntityInterface) {
-                    return $beforeValue->get($displayField);
-                }
+            if (!$value instanceof EntityInterface) {
+                return $value;
+            }
 
-                return Hash::get($beforeValue, $displayField);
+            if ($kind === 'before') {
+                return $value->getOriginal($displayField);
             } else {
-                if (!$value instanceof EntityInterface) {
-                    return $value;
-                }
                 return $value->get($displayField);
             }
         }
