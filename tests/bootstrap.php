@@ -83,5 +83,6 @@ if (!getenv('db_dsn')) {
 
 Cake\Datasource\ConnectionManager::config('test', [
     'url' => getenv('db_dsn'),
+    'quoteIdentifiers' => true,
     'timezone' => 'UTC'
 ]);
