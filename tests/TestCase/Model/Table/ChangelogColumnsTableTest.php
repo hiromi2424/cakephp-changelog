@@ -59,6 +59,9 @@ class ChangelogColumnsTableTest extends TestCase
      */
     public function testInitialize()
     {
+        $this->assertInstanceOf('\Changelog\Model\Table\ChangelogColumnsTable', $this->ChangelogColumns);
+        $this->assertSame('id', $this->ChangelogColumns->primaryKey());
+        $this->assertTrue($this->ChangelogColumns->behaviors()->has('Timestamp'));
     }
 
     /**
@@ -68,6 +71,15 @@ class ChangelogColumnsTableTest extends TestCase
      */
     public function testValidationDefault()
     {
+        $entity = $this->ChangelogColumns->newEntity([
+            'id' => 'expectedInteger',
+        ]);
+
+        $errors = $entity->errors();
+        $this->assertNotEmpty($errors);
+
+        $this->assertArrayHasKey('id', $errors);
+        $this->assertArrayHasKey('column', $errors);
     }
 
     /**
@@ -77,5 +89,16 @@ class ChangelogColumnsTableTest extends TestCase
      */
     public function testBuildRules()
     {
+        $entity = $this->ChangelogColumns->newEntity([
+            'changelog_id' => 'not_exist',
+        ]);
+        $result = $this->ChangelogColumns->checkRules($entity);
+        $this->assertFalse($result);
+
+        $entity = $this->ChangelogColumns->newEntity([
+            'changelog_id' => 1,
+        ]);
+        $result = $this->ChangelogColumns->checkRules($entity);
+        $this->assertTrue($result);
     }
 }

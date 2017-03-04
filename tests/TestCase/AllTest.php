@@ -3,8 +3,9 @@ namespace Changelog\Test\TestSuite;
 
 use Cake\Core\Plugin;
 use Cake\TestSuite\TestSuite;
+use PHPUnit\Framework\TestSuite as BaseTestSuite;
 
-class AllTest extends \PHPUnit_Framework_TestSuite
+class AllTest extends BaseTestSuite
 {
     public static function suite()
     {

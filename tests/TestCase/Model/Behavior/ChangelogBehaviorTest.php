@@ -456,7 +456,7 @@ class ChangelogBehaviorTest extends TestCase
             ->first();
         $this->assertNotEmpty($combinedChange);
         $this->assertSame('First Article', $combinedChange->before);
-        $this->assertSame('1/14/17, 12:00 AM changed title', $combinedChange->after);
+        $this->assertRegExp('#1/14/17,? 12:00 AM changed title#', $combinedChange->after);
     }
 
     /**
