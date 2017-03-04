@@ -398,7 +398,6 @@ class ChangelogBehaviorTest extends TestCase
         // Comments table is associated with hasMany
         // that defaults 'append' save strategy.
         // so that added entity will be changed value.
-        // TODO: consider this
         $this->assertSame('First C...', $commentsChange->before);
         $this->assertSame('Second ...', $commentsChange->after);
 

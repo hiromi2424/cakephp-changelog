@@ -34,9 +34,10 @@ matrix:
 
     - php: hhvm
       env: HHVM=1 DB=mysql db_dsn='mysql://travis@0.0.0.0/cakephp_test'
+
   exclude:
     - php: hhvm
-      env: DB=pgsql
+      env: DB=pgsql db_dsn='postgres://postgres@127.0.0.1/cakephp_test'
 
 before_script:
   - phpenv config-rm xdebug.ini || echo "xdebug not available"
