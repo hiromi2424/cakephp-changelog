@@ -40,5 +40,4 @@ class TaggedFixture extends TestFixture
             'created' => '2007-03-18 10:39:23', 'updated' => '2007-03-18 10:41:31'
         ],
     ];
-
 }

@@ -10,15 +10,16 @@ use Cake\ORM\TableRegistry;
 use Cake\TestSuite\TestCase;
 use Cake\Utility\Inflector;
 use Cake\Utility\Text;
+use Changelog\Model\Behavior\ChangelogBehavior;
 use Exception;
 
-use Changelog\Model\Behavior\ChangelogBehavior;
-
-function table($name) {
+function table($name)
+{
     $table = Inflector::underscore($name);
     $alias = Inflector::camelize($name);
     $class = __NAMESPACE__ . '\\' . $alias . 'Table';
     $connection = ConnectionManager::get('test');
+
     return new $class([
         'alias' => $alias,
         'table' => $table,
@@ -31,9 +32,7 @@ class ArticlesTable extends Table
     public function initialize(array $config)
     {
         parent::initialize($config);
-        /**
-         * make associations for test
-         */
+        // make associations for test
         $this->belongsTo('Users', [
             'targetTable' => table('Users'),
         ]);
@@ -65,7 +64,6 @@ class ArticlesTable extends Table
 
         return $this->defaultConvertAssociation($property, $value, $kind, $association, $isMany);
     }
-
 }
 
 class UsersTable extends Table
@@ -194,7 +192,7 @@ class ChangelogBehaviorTest extends TestCase
             $this->Articles,
             $this->Changelogs,
             $this->ChangelogColumns
-            );
+        );
         I18n::locale($this->backupLocale);
         parent::tearDown();
     }
@@ -434,10 +432,13 @@ class ChangelogBehaviorTest extends TestCase
                             if ($value instanceof Time) {
                                 $value = $value->format('Y-m-d H:i');
                             }
+
                             return $value;
                         }, $values);
+
                         return implode(' ', $values);
                     };
+
                     return [
                         'column' => $name,
                         'before' => $convert($before),
@@ -565,5 +566,4 @@ class ChangelogBehaviorTest extends TestCase
         $this->assertSame('mariano Third Article', $combinedChange->before);
         $this->assertSame('nate Third Article', $combinedChange->after);
     }
-
 }

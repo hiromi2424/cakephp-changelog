@@ -46,5 +46,4 @@ class ArticlesFixture extends TestFixture
             'created' => '2007-03-18 10:41:23', 'updated' => '2007-03-18 10:43:31'
         ],
     ];
-
 }
