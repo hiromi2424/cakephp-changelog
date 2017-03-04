@@ -4,6 +4,7 @@ namespace Changelog\Test\TestCase\Model\Behavior;
 use Cake\Core\Configure;
 use Cake\Datasource\ConnectionManager;
 use Cake\I18n\I18n;
+use Cake\I18n\Time;
 use Cake\ORM\Table;
 use Cake\ORM\TableRegistry;
 use Cake\TestSuite\TestCase;
@@ -424,8 +425,28 @@ class ChangelogBehaviorTest extends TestCase
     public function saveChangelogCombinations()
     {
         $this->Articles->behaviors()->get('Changelog')->config('combinations', [
-            'publish_at_title' => ['publish_at', 'title'],
+            'publish_at_title' => [
+                'columns' => ['publish_at', 'title'],
+                'convert' => function ($name, $before, $after) {
+                    $convert = function ($values) {
+                        $values = array_filter($values);
+                        $values = array_map(function ($value) {
+                            if ($value instanceof Time) {
+                                $value = $value->format('Y-m-d H:i');
+                            }
+                            return $value;
+                        }, $values);
+                        return implode(' ', $values);
+                    };
+                    return [
+                        'column' => $name,
+                        'before' => $convert($before),
+                        'after' => $convert($after),
+                    ];
+                },
+            ],
         ]);
+
         // articles->id = 1 has all association data.
         $article = $this->Articles->get(1);
         // modify all associations
@@ -456,7 +477,7 @@ class ChangelogBehaviorTest extends TestCase
             ->first();
         $this->assertNotEmpty($combinedChange);
         $this->assertSame('First Article', $combinedChange->before);
-        $this->assertRegExp('#1/14/17,? 12:00 AM changed title#', $combinedChange->after);
+        $this->assertSame('2017-01-14 00:00 changed title', $combinedChange->after);
     }
 
     /**
