@@ -485,6 +485,8 @@ class ChangelogBehavior extends Behavior
                 case 'date':
                 case 'datetime':
                 case 'time':
+                // For Postgres
+                case 'timestamp':
                     $baseType = $table->schema()->baseColumnType($column);
                     if ($baseType && Type::map($baseType)) {
                         $driver = $table->connection()->driver();

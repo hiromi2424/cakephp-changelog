@@ -77,6 +77,7 @@ Cake\Routing\DispatcherFactory::add('Routing');
 Cake\Routing\DispatcherFactory::add('ControllerFactory');
 
 // Ensure default test connection is defined
+//putenv('db_dsn=postgres://hiromi@localhost:5432/caketest');
 if (!getenv('db_dsn')) {
     putenv('db_dsn=sqlite:///:memory:');
 }

@@ -43,7 +43,6 @@ class ChangelogColumnsFixture extends TestFixture
      */
     public $records = [
         [
-            'id' => 1,
             'changelog_id' => 1,
             'column' => 'Lorem ipsum dolor sit amet',
             'before' => 'Lorem ipsum dolor sit amet',
